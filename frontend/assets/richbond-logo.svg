@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 220" role="img" aria-labelledby="title desc">
+  <title id="title">Richbond</title>
+  <desc id="desc">Logo Richbond en bleu avec lettrage latin et arabe.</desc>
+  <rect width="720" height="220" fill="none"/>
+  <g fill="#082985">
+    <text x="430" y="72"
+      text-anchor="middle"
+      direction="rtl"
+      unicode-bidi="bidi-override"
+      font-family="Tahoma, Arial, sans-serif"
+      font-size="54"
+      font-weight="700">ريشبوند</text>
+    <text x="360" y="178"
+      text-anchor="middle"
+      font-family="'Brush Script MT', 'Segoe Script', 'Lucida Handwriting', cursive"
+      font-size="142"
+      font-style="italic"
+      font-weight="400"
+      letter-spacing="-5">Richbond</text>
+  </g>
+</svg>

@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: richbond-operations
+    runtime: node
+    plan: free
+    buildCommand: npm run check
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 20

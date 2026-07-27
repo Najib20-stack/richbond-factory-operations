@@ -1,0 +1,400 @@
+{
+  "kpis": {
+    "efficiency": 91
+  },
+  "weeklyProduction": [
+    {
+      "day": "Lun",
+      "value": 68
+    },
+    {
+      "day": "Mar",
+      "value": 78
+    },
+    {
+      "day": "Mer",
+      "value": 58
+    },
+    {
+      "day": "Jeu",
+      "value": 86
+    },
+    {
+      "day": "Ven",
+      "value": 74
+    },
+    {
+      "day": "Sam",
+      "value": 91
+    },
+    {
+      "day": "Dim",
+      "value": 63
+    }
+  ],
+  "departments": [
+    {
+      "id": "bigbed",
+      "name": "BIGBED",
+      "description": "D?partement BIGBED.",
+      "capacity": 80
+    },
+    {
+      "id": "filinge",
+      "name": "FILINGE",
+      "description": "D?partement FILINGE.",
+      "capacity": 80
+    },
+    {
+      "id": "mousse",
+      "name": "MOUSSE",
+      "description": "D?partement MOUSSE.",
+      "capacity": 80
+    },
+    {
+      "id": "tramextyl",
+      "name": "TRAMEXTYL",
+      "description": "D?partement TRAMEXTYL.",
+      "capacity": 80
+    },
+    {
+      "id": "soms",
+      "name": "SOMS",
+      "description": "D?partement SOMS.",
+      "capacity": 80
+    }
+  ],
+  "users": [
+    {
+      "id": "u-1",
+      "firstName": "Youssef",
+      "lastName": "Benali",
+      "email": "youssef@richbond.local",
+      "passwordHash": "demo-only",
+      "role": "Employ?",
+      "departmentId": "bigbed",
+      "phone": "+212 600 000 101",
+      "avatar": "",
+      "isActive": true,
+      "load": 84,
+      "createdAt": "2026-06-21T08:00:00.000Z"
+    },
+    {
+      "id": "u-2",
+      "firstName": "Sara",
+      "lastName": "Bennani",
+      "email": "sara@richbond.local",
+      "passwordHash": "demo-only",
+      "role": "Superviseur",
+      "departmentId": "soms",
+      "phone": "+212 600 000 102",
+      "avatar": "",
+      "isActive": true,
+      "load": 68,
+      "createdAt": "2026-06-21T08:00:00.000Z"
+    },
+    {
+      "id": "u-3",
+      "firstName": "Youssef",
+      "lastName": "Idrissi",
+      "email": "youssef@richbond.local",
+      "passwordHash": "demo-only",
+      "role": "Employ?",
+      "departmentId": "mousse",
+      "phone": "+212 600 000 103",
+      "avatar": "",
+      "isActive": true,
+      "load": 77,
+      "createdAt": "2026-06-21T08:00:00.000Z"
+    },
+    {
+      "id": "u-4",
+      "firstName": "Mina",
+      "lastName": "Talbi",
+      "email": "mina@richbond.local",
+      "passwordHash": "demo-only",
+      "role": "Employ?",
+      "departmentId": "soms",
+      "phone": "+212 600 000 104",
+      "avatar": "",
+      "isActive": true,
+      "load": 52,
+      "createdAt": "2026-06-21T08:00:00.000Z"
+    },
+    {
+      "id": "u-5",
+      "firstName": "Nadia",
+      "lastName": "Rami",
+      "email": "nadia@richbond.local",
+      "passwordHash": "demo-only",
+      "role": "Superviseur",
+      "departmentId": "soms",
+      "phone": "+212 600 000 105",
+      "avatar": "",
+      "isActive": true,
+      "load": 91,
+      "createdAt": "2026-06-21T08:00:00.000Z"
+    },
+    {
+      "id": "u-6",
+      "firstName": "Karim",
+      "lastName": "Fassi",
+      "email": "karim@richbond.local",
+      "passwordHash": "demo-only",
+      "role": "Superviseur",
+      "departmentId": "soms",
+      "phone": "+212 600 000 106",
+      "avatar": "",
+      "isActive": true,
+      "load": 34,
+      "createdAt": "2026-06-21T08:00:00.000Z"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "RB-T248",
+      "title": "Assembler le lot de matelas #248",
+      "description": "Alignement des ressorts, superposition de mousse et inspection de la fermeture de housse.",
+      "productType": "Matelas orthopédique",
+      "batchNumber": "MAT-248",
+      "quantity": 120,
+      "productionLine": "A-04",
+      "departmentId": "bigbed",
+      "assignedEmployeeId": "u-1",
+      "supervisorId": "u-2",
+      "priority": "High",
+      "status": "In Progress",
+      "estimatedDuration": "4h 20m",
+      "dueDateLabel": "Today 16:00",
+      "attachments": [],
+      "createdBy": "u-5",
+      "createdAt": "2026-06-21T08:15:00.000Z",
+      "startedAt": "2026-06-21T09:00:00.000Z",
+      "completedAt": null,
+      "approvedAt": null,
+      "taskType": "normal",
+      "consolidationType": "",
+      "responsibleIds": [
+        "u-1"
+      ],
+      "verifierId": "u-2",
+      "dueDateChangeRequest": "",
+      "refusalCount": 0
+    },
+    {
+      "id": "RB-F194",
+      "title": "Test densité qualité des blocs mousse",
+      "description": "Contrôler la reprise de compression et les mesures de densité avant transfert.",
+      "productType": "Bloc de mousse",
+      "batchNumber": "FOAM-194",
+      "quantity": 48,
+      "productionLine": "F-02",
+      "departmentId": "soms",
+      "assignedEmployeeId": "u-4",
+      "supervisorId": "u-2",
+      "priority": "Critical",
+      "status": "Waiting for Review",
+      "estimatedDuration": "1h 10m",
+      "dueDateLabel": "Today 14:30",
+      "attachments": [],
+      "createdBy": "u-5",
+      "createdAt": "2026-06-21T08:20:00.000Z",
+      "startedAt": "2026-06-21T10:00:00.000Z",
+      "completedAt": "2026-06-21T11:10:00.000Z",
+      "approvedAt": null,
+      "taskType": "normal",
+      "consolidationType": "",
+      "responsibleIds": [
+        "u-4"
+      ],
+      "verifierId": "u-2",
+      "dueDateChangeRequest": "",
+      "refusalCount": 0
+    },
+    {
+      "id": "RB-P083",
+      "title": "Emballer les cartons d’oreillers premium",
+      "description": "Sceller, étiqueter et préparer les cartons pour l’entrée en entrepôt.",
+      "productType": "Oreiller mémoire de forme",
+      "batchNumber": "PIL-083",
+      "quantity": 360,
+      "productionLine": "P-01",
+      "departmentId": "soms",
+      "assignedEmployeeId": "u-3",
+      "supervisorId": "u-2",
+      "priority": "Medium",
+      "status": "In Progress",
+      "estimatedDuration": "3h",
+      "dueDateLabel": "Today 18:00",
+      "attachments": [],
+      "createdBy": "u-5",
+      "createdAt": "2026-06-21T08:25:00.000Z",
+      "startedAt": null,
+      "completedAt": null,
+      "approvedAt": null,
+      "taskType": "normal",
+      "consolidationType": "",
+      "responsibleIds": [
+        "u-3"
+      ],
+      "verifierId": "u-2",
+      "dueDateChangeRequest": "",
+      "refusalCount": 0
+    },
+    {
+      "id": "RB-S317",
+      "title": "Découper les panneaux de tissu matelassé",
+      "description": "Préparer les panneaux pour la file de couture des housses de matelas.",
+      "productType": "Panneaux textile",
+      "batchNumber": "FAB-317",
+      "quantity": 260,
+      "productionLine": "C-03",
+      "departmentId": "tramextyl",
+      "assignedEmployeeId": "u-1",
+      "supervisorId": "u-6",
+      "priority": "High",
+      "status": "In Progress",
+      "estimatedDuration": "2h 45m",
+      "dueDateLabel": "Overdue",
+      "attachments": [],
+      "createdBy": "u-5",
+      "createdAt": "2026-06-21T08:35:00.000Z",
+      "startedAt": null,
+      "completedAt": null,
+      "approvedAt": null,
+      "taskType": "normal",
+      "consolidationType": "",
+      "responsibleIds": [
+        "u-1"
+      ],
+      "verifierId": "u-6",
+      "dueDateChangeRequest": "",
+      "refusalCount": 0
+    },
+    {
+      "id": "RB-M022",
+      "title": "Inspecter la panne capteur convoyeur",
+      "description": "Le capteur de la ligne A-04 signale des arrêts intermittents.",
+      "productType": "Maintenance",
+      "batchNumber": "MNT-022",
+      "quantity": 1,
+      "productionLine": "A-04",
+      "departmentId": "soms",
+      "assignedEmployeeId": "u-6",
+      "supervisorId": "u-5",
+      "priority": "Critical",
+      "status": "In Progress",
+      "estimatedDuration": "55m",
+      "dueDateLabel": "Today 13:00",
+      "attachments": [],
+      "createdBy": "u-5",
+      "createdAt": "2026-06-21T08:40:00.000Z",
+      "startedAt": null,
+      "completedAt": null,
+      "approvedAt": null,
+      "taskType": "normal",
+      "consolidationType": "",
+      "responsibleIds": [
+        "u-6"
+      ],
+      "verifierId": "u-5",
+      "dueDateChangeRequest": "",
+      "refusalCount": 0
+    },
+    {
+      "id": "RB-W611",
+      "title": "Préparer les matelas finis pour expédition",
+      "description": "Déplacer les lots approuvés vers le quai B avec confirmation scan.",
+      "productType": "Produits finis",
+      "batchNumber": "SHIP-611",
+      "quantity": 80,
+      "productionLine": "Dock B",
+      "departmentId": "soms",
+      "assignedEmployeeId": "u-4",
+      "supervisorId": "u-5",
+      "priority": "Low",
+      "status": "Completed",
+      "estimatedDuration": "1h 30m",
+      "dueDateLabel": "Today 11:00",
+      "attachments": [],
+      "createdBy": "u-5",
+      "createdAt": "2026-06-21T08:45:00.000Z",
+      "startedAt": "2026-06-21T09:00:00.000Z",
+      "completedAt": "2026-06-21T10:30:00.000Z",
+      "approvedAt": "2026-06-21T10:45:00.000Z",
+      "taskType": "normal",
+      "consolidationType": "",
+      "responsibleIds": [
+        "u-4"
+      ],
+      "verifierId": "u-5",
+      "dueDateChangeRequest": "",
+      "refusalCount": 0
+    }
+  ],
+  "activities": [
+    {
+      "id": "a-1",
+      "message": "Youssef a démarré le matelas #248 sur la ligne A-04",
+      "time": "maintenant"
+    },
+    {
+      "id": "a-2",
+      "message": "Le contrôle qualité a approuvé le lot #194 pour transfert",
+      "time": "4m"
+    },
+    {
+      "id": "a-3",
+      "message": "La maintenance a signalé un arrêt capteur",
+      "time": "9m"
+    },
+    {
+      "id": "a-4",
+      "message": "Sara a réassigné la tâche d’emballage RB-P083",
+      "time": "13m"
+    },
+    {
+      "id": "a-5",
+      "message": "L’entrepôt a reçu 80 matelas finis",
+      "time": "18m"
+    },
+    {
+      "id": "a-6",
+      "message": "La découpe tissu a signalé une rupture matière",
+      "time": "26m"
+    }
+  ],
+  "reports": [
+    {
+      "id": "r-1",
+      "name": "Résumé quotidien de production",
+      "description": "Export PDF, Excel et CSV de la production du jour.",
+      "status": "Ready"
+    },
+    {
+      "id": "r-2",
+      "name": "Productivité des employés",
+      "description": "Travail réalisé par employé et par période.",
+      "status": "Ready"
+    },
+    {
+      "id": "r-3",
+      "name": "Tendances de retard par département",
+      "description": "Tâches bloquées et en retard sur les 30 derniers jours.",
+      "status": "Processing"
+    },
+    {
+      "id": "r-4",
+      "name": "Temps d’arrêt machine",
+      "description": "Incidents maintenance par ligne de production.",
+      "status": "Ready"
+    },
+    {
+      "id": "r-5",
+      "name": "Rapport des rejets qualité",
+      "description": "Lots refusés par produit et superviseur.",
+      "status": "Ready"
+    }
+  ],
+  "notifications": []
+}

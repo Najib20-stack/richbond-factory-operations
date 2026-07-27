@@ -1,0 +1,17 @@
+{
+  "name": "richbond-factory-operations",
+  "version": "1.0.0",
+  "description": "Application full-stack de gestion des operations d'usine Richbond.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node backend/server.mjs",
+    "dev": "node backend/server.mjs",
+    "check": "npm run check:all --prefix backend && node --check frontend/app.js",
+    "check:backend": "npm run check:all --prefix backend",
+    "check:frontend": "node --check frontend/app.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

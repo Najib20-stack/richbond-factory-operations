@@ -1,0 +1,15 @@
+{
+  "name": "richbond-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs",
+    "check": "node --check server.mjs",
+    "check:all": "node --check server.mjs && node --check src/app.js && node --check src/routes/apiRoutes.js && node --check src/controllers/authController.js && node --check src/controllers/bootstrapController.js && node --check src/controllers/departmentController.js && node --check src/controllers/taskController.js && node --check src/controllers/userController.js && node --check src/database/jsonDatabase.js && node --check src/models/departmentModel.js && node --check src/models/taskModel.js && node --check src/models/userModel.js && node --check src/services/staticFileService.js && node --check src/utils/enrich.js && node --check src/utils/http.js && node --check src/utils/roles.js && node --check src/utils/status.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
