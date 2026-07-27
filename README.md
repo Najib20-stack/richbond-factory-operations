@@ -1,8 +1,8 @@
 # Richbond Operations Usine
 
-Application full-stack exécutable pour la gestion des opérations d’usine Richbond, avec dossiers séparés pour le frontend, le backend et la base de données.
+Application full-stack de gestion des taches d'usine Richbond, avec frontend, backend Node.js et base de donnees JSON locale.
 
-## Structure Du Projet
+## Structure du projet
 
 ```text
 richbond/
@@ -10,29 +10,21 @@ richbond/
     index.html
     styles.css
     app.js
-    README.md
+    package.json
   backend/
     server.mjs
+    src/
     package.json
-    README.md
   database/
     richbond-db.json
     seed.json
   package.json
-  README.md
-  .gitignore
+  render.yaml
 ```
 
-## Contenu
+## Lancer le projet
 
-- Frontend : tableau de bord futuriste et interface par rôle dans `frontend/`
-- Backend : API REST Node.js dans `backend/`
-- Base de données : base locale JSON dans `database/`
-- Aucune dépendance externe requise
-
-## Lancer Le Projet
-
-Depuis la racine du projet :
+Depuis la racine :
 
 ```bash
 npm start
@@ -44,66 +36,55 @@ Puis ouvrir :
 http://localhost:3000
 ```
 
-## Connexion
-
-Comptes de démonstration :
+## Connexion demo
 
 ```text
-Administrateur : nadia@richbond.local
-Superviseur    : sara@richbond.local
-Employé        : ahmed@richbond.local
-Mot de passe   : richbond123
+Verificateur : nadia@richbond.local
+Verificateur : sara@richbond.local
+Responsable  : youssef@richbond.local
+Mot de passe : richbond123
 ```
 
-Chaque rôle voit seulement les pages autorisées pour son profil.
-
-## Scripts Utiles
+## Scripts utiles
 
 ```bash
 npm run dev
 npm run check
+npm run check:backend
+npm run check:frontend
 ```
 
-Vous pouvez aussi lancer uniquement le backend :
-
-```bash
-cd backend
-npm start
-```
-
-Ou démarrer depuis le dossier frontend :
-
-```bash
-cd frontend
-npm run dev
-```
-
-Le terminal affichera ensuite :
-
-```text
-Site web : http://localhost:3000
-```
-
-## Endpoints API
+## API
 
 - `GET /api/health`
 - `GET /api/bootstrap`
+- `POST /api/login`
 - `GET /api/tasks`
 - `POST /api/tasks`
 - `PATCH /api/tasks/:id`
+- `DELETE /api/tasks/:id`
 - `GET /api/users`
+- `POST /api/users`
+- `PATCH /api/users/:id`
 - `GET /api/departments`
+- `POST /api/departments`
 
-## Base De Données
+## Base de donnees
 
-Les changements de statut et les nouvelles tâches sont enregistrés dans :
+En local, les donnees sont enregistrees dans :
 
 ```text
 database/richbond-db.json
 ```
 
-Les données de démonstration initiales sont stockées dans :
+Les donnees initiales sont dans :
 
 ```text
 database/seed.json
+```
+
+Pour un deploiement avec stockage persistant, configure :
+
+```text
+DATABASE_DIR=/chemin/vers/le/dossier/database
 ```
