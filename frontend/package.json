@@ -5,11 +5,27 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node dev.mjs",
-    "start": "node dev.mjs",
-    "check": "node --check app.js && node --check dev.mjs"
+    "dev": "vite --host 0.0.0.0",
+    "start": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "build:android": "vite build --mode android",
+    "preview": "vite preview --host 0.0.0.0",
+    "check": "node --check app.js && node --check apiClient.js && node --check reporting.js && node --check sessionStore.js && vite build",
+    "test": "vitest run"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
+  },
+  "dependencies": {
+    "lucide": "^1.27.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "jsdom": "^29.1.1",
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10"
   }
 }

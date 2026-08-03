@@ -4,11 +4,15 @@ export function enrich(data) {
   const departments = new Map(data.departments.map((department) => [department.id, department]));
   const users = new Map(data.users.map((user) => [user.id, user]));
 
-  const enrichedUsers = data.users.map((user) => ({
-    ...user,
-    roleKey: roleKey(user.role),
-    departmentName: departments.get(user.departmentId)?.name || "Operations",
-  }));
+  const enrichedUsers = data.users.map((user) => {
+    const { passwordHash: _passwordHash, mustChangePassword, ...safeUser } = user;
+    return {
+      ...safeUser,
+      requiresPasswordChange: Boolean(mustChangePassword),
+      roleKey: roleKey(user.role),
+      departmentName: departments.get(user.departmentId)?.name || "Operations",
+    };
+  });
 
   const enrichedTasks = data.tasks.map((task) => {
     const responsibleIds = Array.isArray(task.responsibleIds) && task.responsibleIds.length
@@ -33,8 +37,13 @@ export function enrich(data) {
   });
 
   return {
-    ...data,
+    kpis: data.kpis || {},
+    weeklyProduction: data.weeklyProduction || [],
+    departments: data.departments || [],
     users: enrichedUsers,
     tasks: enrichedTasks,
+    activities: data.activities || [],
+    reports: data.reports || [],
+    notifications: data.notifications || [],
   };
 }

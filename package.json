@@ -4,14 +4,41 @@
   "description": "Application full-stack de gestion des operations d'usine Richbond.",
   "type": "module",
   "private": true,
+  "workspaces": [
+    "frontend"
+  ],
   "scripts": {
+    "postinstall": "npm ci --prefix backend",
+    "build": "npm run build --prefix frontend",
+    "prestart": "npm run build",
     "start": "node backend/server.mjs",
-    "dev": "node backend/server.mjs",
-    "check": "npm run check:all --prefix backend && node --check frontend/app.js",
+    "dev": "npm run build && node backend/server.mjs",
+    "android:sync": "npm run build:android --prefix frontend && cap sync android",
+    "android:open": "cap open android",
+    "android:run": "npm run android:sync && cap run android",
+    "android:build": "npm run android:sync && cap build android",
+    "check": "npm run check:all --prefix backend && npm run check --prefix frontend",
     "check:backend": "npm run check:all --prefix backend",
-    "check:frontend": "node --check frontend/app.js"
+    "check:frontend": "npm run check --prefix frontend",
+    "test": "npm run test --prefix backend && npm run test --prefix frontend",
+    "data:audit": "npm run data:audit --prefix backend",
+    "data:backup": "npm run data:backup --prefix backend",
+    "data:restore": "npm run data:restore --prefix backend --",
+    "db:migrate": "npm run db:migrate --prefix backend",
+    "db:status": "npm run db:status --prefix backend",
+    "db:import": "npm run db:import --prefix backend --",
+    "db:audit": "npm run db:audit --prefix backend",
+    "db:export": "npm run db:export --prefix backend --",
+    "db:backup": "npm run db:backup --prefix backend --"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/core": "^8.4.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.4.2"
   }
 }

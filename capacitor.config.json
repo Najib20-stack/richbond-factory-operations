@@ -1,0 +1,13 @@
+{
+  "appId": "ma.richbond.operations",
+  "appName": "Richbond Operations",
+  "webDir": "frontend/dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
+}

@@ -36,44 +36,44 @@
     {
       "id": "bigbed",
       "name": "BIGBED",
-      "description": "D?partement BIGBED.",
+      "description": "Département BIGBED.",
       "capacity": 80
     },
     {
       "id": "filinge",
       "name": "FILINGE",
-      "description": "D?partement FILINGE.",
+      "description": "Département FILINGE.",
       "capacity": 80
     },
     {
       "id": "mousse",
       "name": "MOUSSE",
-      "description": "D?partement MOUSSE.",
+      "description": "Département MOUSSE.",
       "capacity": 80
     },
     {
       "id": "tramextyl",
       "name": "TRAMEXTYL",
-      "description": "D?partement TRAMEXTYL.",
+      "description": "Département TRAMEXTYL.",
       "capacity": 80
     },
     {
       "id": "soms",
       "name": "SOMS",
-      "description": "D?partement SOMS.",
+      "description": "Département SOMS.",
       "capacity": 80
     }
   ],
   "users": [
     {
       "id": "u-1",
-      "firstName": "Youssef",
-      "lastName": "Benali",
-      "email": "youssef@richbond.local",
+      "firstName": "Responsable",
+      "lastName": "Démo 1",
+      "email": "responsable.demo1@example.test",
       "passwordHash": "demo-only",
-      "role": "Employ?",
+      "role": "Employé",
       "departmentId": "bigbed",
-      "phone": "+212 600 000 101",
+      "phone": "",
       "avatar": "",
       "isActive": true,
       "load": 84,
@@ -81,13 +81,13 @@
     },
     {
       "id": "u-2",
-      "firstName": "Sara",
-      "lastName": "Bennani",
-      "email": "sara@richbond.local",
+      "firstName": "Vérificateur",
+      "lastName": "Démo 1",
+      "email": "verificateur.demo1@example.test",
       "passwordHash": "demo-only",
       "role": "Superviseur",
       "departmentId": "soms",
-      "phone": "+212 600 000 102",
+      "phone": "",
       "avatar": "",
       "isActive": true,
       "load": 68,
@@ -95,13 +95,13 @@
     },
     {
       "id": "u-3",
-      "firstName": "Youssef",
-      "lastName": "Idrissi",
-      "email": "youssef@richbond.local",
+      "firstName": "Responsable",
+      "lastName": "Démo 2",
+      "email": "responsable.demo2@example.test",
       "passwordHash": "demo-only",
-      "role": "Employ?",
+      "role": "Employé",
       "departmentId": "mousse",
-      "phone": "+212 600 000 103",
+      "phone": "",
       "avatar": "",
       "isActive": true,
       "load": 77,
@@ -109,13 +109,13 @@
     },
     {
       "id": "u-4",
-      "firstName": "Mina",
-      "lastName": "Talbi",
-      "email": "mina@richbond.local",
+      "firstName": "Responsable",
+      "lastName": "Démo 3",
+      "email": "responsable.demo3@example.test",
       "passwordHash": "demo-only",
-      "role": "Employ?",
+      "role": "Employé",
       "departmentId": "soms",
-      "phone": "+212 600 000 104",
+      "phone": "",
       "avatar": "",
       "isActive": true,
       "load": 52,
@@ -123,13 +123,13 @@
     },
     {
       "id": "u-5",
-      "firstName": "Nadia",
-      "lastName": "Rami",
-      "email": "nadia@richbond.local",
+      "firstName": "Vérificateur",
+      "lastName": "Démo 2",
+      "email": "verificateur.demo2@example.test",
       "passwordHash": "demo-only",
       "role": "Superviseur",
       "departmentId": "soms",
-      "phone": "+212 600 000 105",
+      "phone": "",
       "avatar": "",
       "isActive": true,
       "load": 91,
@@ -137,13 +137,13 @@
     },
     {
       "id": "u-6",
-      "firstName": "Karim",
-      "lastName": "Fassi",
-      "email": "karim@richbond.local",
+      "firstName": "Vérificateur",
+      "lastName": "Démo 3",
+      "email": "verificateur.demo3@example.test",
       "passwordHash": "demo-only",
       "role": "Superviseur",
       "departmentId": "soms",
-      "phone": "+212 600 000 106",
+      "phone": "",
       "avatar": "",
       "isActive": true,
       "load": 34,
@@ -335,7 +335,7 @@
   "activities": [
     {
       "id": "a-1",
-      "message": "Youssef a démarré le matelas #248 sur la ligne A-04",
+      "message": "Le responsable Démo 1 a démarré le matelas #248 sur la ligne A-04",
       "time": "maintenant"
     },
     {
@@ -350,7 +350,7 @@
     },
     {
       "id": "a-4",
-      "message": "Sara a réassigné la tâche d’emballage RB-P083",
+      "message": "Le vérificateur Démo 1 a réassigné la tâche d’emballage RB-P083",
       "time": "13m"
     },
     {
@@ -396,5 +396,7 @@
       "status": "Ready"
     }
   ],
-  "notifications": []
+  "notifications": [],
+  "sessions": [],
+  "auditLog": []
 }

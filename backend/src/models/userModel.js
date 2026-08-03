@@ -1,22 +1,20 @@
-export function createUser(input, departments) {
-  const firstName = String(input.firstName || "").trim();
-  const lastName = String(input.lastName || "").trim();
-  const email = String(input.email || "").trim().toLowerCase();
-  const role = String(input.role || "Employé").trim();
-  const departmentId = String(input.departmentId || departments[0]?.id || "warehouse").trim();
+import { randomUUID } from "node:crypto";
 
+export function createUser(input) {
   return {
-    id: `u-${Date.now()}`,
-    firstName,
-    lastName,
-    email,
-    passwordHash: "demo-only",
-    role,
-    departmentId,
-    phone: String(input.phone || "").trim(),
+    id: `u-${randomUUID().slice(0, 8)}`,
+    firstName: input.firstName,
+    lastName: input.lastName,
+    email: input.email,
+    passwordHash: input.passwordHash,
+    mustChangePassword: true,
+    passwordUpdatedAt: null,
+    role: input.role,
+    departmentId: input.departmentId,
+    phone: input.phone,
     avatar: "",
     isActive: true,
-    load: Number(input.load || 0),
+    load: input.load,
     createdAt: new Date().toISOString(),
   };
 }

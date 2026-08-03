@@ -1,0 +1,47 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+
+buildscript {
+
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.13.0'
+        classpath 'com.google.gms:google-services:4.4.4'
+
+        // NOTE: Do not place your application dependencies here; they belong
+        // in the individual module build.gradle files
+    }
+}
+
+apply from: "variables.gradle"
+
+def configuredBuildRoot = System.getenv('RICHBOND_ANDROID_BUILD_DIR')
+def localAppData = System.getenv('LOCALAPPDATA')
+def androidBuildRoot = configuredBuildRoot
+        ? new File(configuredBuildRoot)
+        : localAppData
+            ? new File(localAppData, 'RichbondOperations/android-build')
+            : new File(gradle.gradleUserHomeDir, 'richbond-operations/android-build')
+
+layout.buildDirectory.set(new File(androidBuildRoot, 'root'))
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+// OneDrive can lock generated files while Gradle replaces them on Windows.
+// Build every Android module in the local application-data directory instead.
+subprojects { subproject ->
+    subproject.layout.buildDirectory.set(new File(androidBuildRoot, subproject.name))
+}
+
+task clean(type: Delete) {
+    subprojects.each { subproject ->
+        delete subproject.layout.buildDirectory
+    }
+}

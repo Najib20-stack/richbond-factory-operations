@@ -7,9 +7,22 @@
     "start": "node server.mjs",
     "dev": "node server.mjs",
     "check": "node --check server.mjs",
-    "check:all": "node --check server.mjs && node --check src/app.js && node --check src/routes/apiRoutes.js && node --check src/controllers/authController.js && node --check src/controllers/bootstrapController.js && node --check src/controllers/departmentController.js && node --check src/controllers/taskController.js && node --check src/controllers/userController.js && node --check src/database/jsonDatabase.js && node --check src/models/departmentModel.js && node --check src/models/taskModel.js && node --check src/models/userModel.js && node --check src/services/staticFileService.js && node --check src/utils/enrich.js && node --check src/utils/http.js && node --check src/utils/roles.js && node --check src/utils/status.js"
+    "check:all": "node --check server.mjs && node --check src/app.js && node --check src/routes/apiRoutes.js && node --check src/controllers/authController.js && node --check src/controllers/bootstrapController.js && node --check src/controllers/departmentController.js && node --check src/controllers/taskController.js && node --check src/controllers/userController.js && node --check src/database/database.js && node --check src/database/jsonDatabase.js && node --check src/database/migrations.js && node --check src/database/postgresDatabase.js && node --check src/database/postgresPool.js && node --check src/models/departmentModel.js && node --check src/models/taskModel.js && node --check src/models/userModel.js && node --check src/security/authorization.js && node --check src/security/loginProtection.js && node --check src/security/passwords.js && node --check src/security/sessions.js && node --check src/services/staticFileService.js && node --check src/utils/audit.js && node --check src/utils/enrich.js && node --check src/utils/http.js && node --check src/utils/roles.js && node --check src/utils/status.js && node --check src/utils/taskAccess.js && node --check src/utils/validation.js && node --check scripts/database-cli.mjs && node --check scripts/postgres-cli.mjs && node --check scripts/postgres-backup.mjs",
+    "test": "node --test",
+    "data:audit": "node scripts/database-cli.mjs audit",
+    "data:backup": "node scripts/database-cli.mjs backup",
+    "data:restore": "node scripts/database-cli.mjs restore",
+    "db:migrate": "node scripts/postgres-cli.mjs migrate",
+    "db:status": "node scripts/postgres-cli.mjs status",
+    "db:import": "node scripts/postgres-cli.mjs import-json",
+    "db:audit": "node scripts/postgres-cli.mjs audit",
+    "db:export": "node scripts/postgres-cli.mjs export-json",
+    "db:backup": "node scripts/postgres-backup.mjs"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
+  },
+  "dependencies": {
+    "pg": "^8.22.0"
   }
 }

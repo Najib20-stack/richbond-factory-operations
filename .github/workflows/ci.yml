@@ -1,0 +1,83 @@
+name: Verification continue
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  application:
+    name: Tests et build web
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: richbond_test
+          POSTGRES_PASSWORD: richbond_test_password
+          POSTGRES_DB: richbond_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U richbond_test -d richbond_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_DATABASE_URL: postgresql://richbond_test:richbond_test_password@127.0.0.1:5432/richbond_test
+      TEST_DATABASE_SSL_MODE: disable
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run check
+      - run: npm run data:audit
+      - name: Auditer PostgreSQL après les tests d'intégration
+        env:
+          DATABASE_URL: postgresql://richbond_test:richbond_test_password@127.0.0.1:5432/richbond_test
+          DATABASE_SSL_MODE: disable
+        run: npm run db:audit
+
+  android:
+    name: Build Android debug
+    runs-on: ubuntu-latest
+    env:
+      RICHBOND_ANDROID_BUILD_DIR: ${{ github.workspace }}/android-build-output
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - name: Installer Android SDK 36
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - run: npm ci
+      - run: npm run android:sync
+      - name: Tester et compiler Android
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v7
+        with:
+          name: richbond-android-debug
+          path: android-build-output/app/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14

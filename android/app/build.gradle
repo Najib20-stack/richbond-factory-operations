@@ -1,0 +1,98 @@
+apply plugin: 'com.android.application'
+
+def stagedAssetsDir = layout.buildDirectory.dir('staged-main-assets')
+def richbondVersionCode = (System.getenv('RICHBOND_VERSION_CODE') ?: '1').toInteger()
+def richbondVersionName = System.getenv('RICHBOND_VERSION_NAME') ?: '1.0.0'
+def releaseKeystore = System.getenv('RICHBOND_KEYSTORE_PATH')
+def releaseStorePassword = System.getenv('RICHBOND_KEYSTORE_PASSWORD')
+def releaseKeyAlias = System.getenv('RICHBOND_KEY_ALIAS')
+def releaseKeyPassword = System.getenv('RICHBOND_KEY_PASSWORD')
+def releaseSigningReady = releaseKeystore && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
+
+android {
+    namespace = "ma.richbond.operations"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "ma.richbond.operations"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode richbondVersionCode
+        versionName richbondVersionName
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        if (releaseSigningReady) {
+            release {
+                storeFile file(releaseKeystore)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (releaseSigningReady) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+    sourceSets {
+        main {
+            assets.srcDirs = [stagedAssetsDir]
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+def stageAndroidAssets = tasks.register('stageAndroidAssets') {
+    doLast {
+        project.sync {
+            from(file('src/main/assets'))
+            into(stagedAssetsDir)
+        }
+    }
+}
+
+// Package a regular local copy because OneDrive exposes generated web files as
+// reparse points, which Gradle cannot snapshot as Android asset inputs.
+tasks.configureEach { task ->
+    if (task.name.startsWith('merge') && task.name.endsWith('Assets')) {
+        task.dependsOn(stageAndroidAssets)
+    }
+}
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

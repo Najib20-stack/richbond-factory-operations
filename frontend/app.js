@@ -1,21 +1,77 @@
-const { useEffect, useMemo, useState } = React;
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createRoot } from "react-dom/client";
+import {
+  AlertTriangle,
+  ArrowRight,
+  ArrowUpRight,
+  ChartNoAxesCombined,
+  CheckCircle2,
+  ChevronRight,
+  ClipboardCheck,
+  KeyRound,
+  LayoutDashboard,
+  LoaderCircle,
+  LockKeyhole,
+  LogOut,
+  Mail,
+  Moon,
+  PanelsTopLeft,
+  RefreshCw,
+  Search,
+  Settings2,
+  ShieldCheck,
+  Sun,
+  Users as UsersIcon,
+  WifiOff,
+} from "lucide";
+import { ApiError, createApiClient } from "./apiClient.js";
+import richbondLogoUrl from "./assets/richbond-logo.svg";
+import { buildProductionReportHtml, filterTasksForReport, summarizeReport } from "./reporting.js";
+import { clearSession, loadSession, saveSession } from "./sessionStore.js";
+import "./styles.css";
+
 const h = React.createElement;
+const apiClient = createApiClient();
+const LUCIDE_ICONS = {
+  "alert-triangle": AlertTriangle,
+  "arrow-right": ArrowRight,
+  "arrow-up-right": ArrowUpRight,
+  "chart-no-axes-combined": ChartNoAxesCombined,
+  "check-circle-2": CheckCircle2,
+  "chevron-right": ChevronRight,
+  "clipboard-check": ClipboardCheck,
+  "key-round": KeyRound,
+  "layout-dashboard": LayoutDashboard,
+  "loader-circle": LoaderCircle,
+  "lock-keyhole": LockKeyhole,
+  "log-out": LogOut,
+  mail: Mail,
+  moon: Moon,
+  "panels-top-left": PanelsTopLeft,
+  "refresh-cw": RefreshCw,
+  search: Search,
+  "settings-2": Settings2,
+  "shield-check": ShieldCheck,
+  sun: Sun,
+  users: UsersIcon,
+  "wifi-off": WifiOff,
+};
 
 const emptyData = { departments: [], users: [], tasks: [], activities: [], notifications: [], reports: [], weeklyProduction: [], kpis: {} };
 
 const navItems = [
-  { id: "dashboard", label: "Tableau de bord", icon: "Accueil", roles: ["supervisor"] },
-  { id: "tasks", label: "Tâches", icon: "Grille", roles: ["supervisor", "employee"] },
-  { id: "employee", label: "Responsable", icon: "Profil", roles: ["employee"] },
-  { id: "supervisor", label: "Supervision", icon: "Suivi", roles: ["supervisor"] },
-  { id: "reports", label: "Rapports", icon: "Données", roles: ["supervisor"] },
-  { id: "users", label: "Utilisateurs", icon: "Équipe", roles: ["supervisor"] },
-  { id: "settings", label: "Paramètres", icon: "Config", roles: ["supervisor"] },
+  { id: "dashboard", label: "Tableau de bord", icon: "layout-dashboard", roles: ["supervisor"] },
+  { id: "tasks", label: "Tâches", icon: "panels-top-left", roles: ["supervisor", "employee"] },
+  { id: "employee", label: "Responsable", icon: "clipboard-check", roles: ["employee"] },
+  { id: "supervisor", label: "Supervision", icon: "shield-check", roles: ["supervisor"] },
+  { id: "reports", label: "Rapports", icon: "chart-no-axes-combined", roles: ["supervisor"] },
+  { id: "users", label: "Utilisateurs", icon: "users", roles: ["supervisor"] },
+  { id: "settings", label: "Paramètres", icon: "settings-2", roles: ["supervisor"] },
 ];
 
 const statusLabels = {
   Pending: "En attente",
-  Ready: "En cours",
+  Ready: "À démarrer",
   "In Progress": "En cours",
   "On Hold": "En pause",
   "Waiting for Review": "En attente de vérification",
@@ -92,51 +148,32 @@ function commitmentIndex(tasks, userId) {
   return Number((totalDelay / userTasks.length).toFixed(1));
 }
 
-async function api(path, options = {}) {
-  const response = await fetch(path, {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
-    ...options,
-  });
-  if (!response.ok) throw new Error((await response.text()) || `Erreur ${response.status}`);
-  return response.status === 204 ? null : response.json();
+function Icon({ name, size = 18 }) {
+  const iconNode = LUCIDE_ICONS[name];
+  if (!iconNode) return null;
+
+  return h(
+    "svg",
+    {
+      className: `lucide lucide-${name}`,
+      xmlns: "http://www.w3.org/2000/svg",
+      width: size,
+      height: size,
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: 1.8,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      focusable: "false",
+      "aria-hidden": true,
+    },
+    ...iconNode.map(([tag, attrs], index) => h(tag, { ...attrs, key: `${name}-${index}` })),
+  );
 }
 
 function RichbondLogo() {
-  return h(
-    "svg",
-    { className: "brand-logo", viewBox: "0 0 720 220", role: "img", "aria-label": "Richbond" },
-    h(
-      "g",
-      { fill: "#082985" },
-      h(
-        "text",
-        {
-          x: 430,
-          y: 72,
-          textAnchor: "middle",
-          direction: "rtl",
-          unicodeBidi: "bidi-override",
-          fontFamily: "Tahoma, Arial, sans-serif",
-          fontSize: 54,
-          fontWeight: 700,
-        },
-        "ريشبوند",
-      ),
-      h(
-        "text",
-        {
-          x: 360,
-          y: 178,
-          textAnchor: "middle",
-          fontFamily: "'Brush Script MT', 'Segoe Script', 'Lucida Handwriting', cursive",
-          fontSize: 142,
-          fontStyle: "italic",
-          letterSpacing: -5,
-        },
-        "Richbond",
-      ),
-    ),
-  );
+  return h("img", { className: "brand-logo", src: richbondLogoUrl, alt: "Richbond" });
 }
 
 function Pill({ children, color = "" }) {
@@ -144,7 +181,13 @@ function Pill({ children, color = "" }) {
 }
 
 function Metric({ label, value, detail }) {
-  return h("article", { className: "metric-card" }, h("small", null, label), h("strong", null, value), h("span", { className: "muted" }, detail));
+  return h(
+    "article",
+    { className: "metric-card" },
+    h("div", { className: "metric-topline" }, h("small", null, label), h("span", { className: "metric-signal", "aria-hidden": true })),
+    h("strong", null, value),
+    h("span", { className: "muted" }, detail),
+  );
 }
 
 function Brand({ login = false }) {
@@ -156,25 +199,60 @@ function Brand({ login = false }) {
   );
 }
 
-function Login({ onLogin }) {
-  const [email, setEmail] = useState("nadia@richbond.local");
-  const [password, setPassword] = useState("richbond123");
-  const [message, setMessage] = useState("");
+function useUnsavedChanges(isDirty) {
+  useEffect(() => {
+    if (!isDirty) return undefined;
+    const warn = (event) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [isDirty]);
+}
+
+function StatusBanner({ kind = "info", message, onRetry, onClose }) {
+  if (!message) return null;
+  const icon = kind === "offline" ? "wifi-off" : kind === "success" ? "check-circle-2" : "alert-triangle";
+  return h(
+    "div",
+    { className: `status-banner ${kind}`, role: kind === "error" || kind === "offline" ? "alert" : "status" },
+    h(Icon, { name: icon, size: 19 }),
+    h("span", null, message),
+    onRetry && h("button", { className: "banner-button", type: "button", onClick: onRetry }, h(Icon, { name: "refresh-cw", size: 16 }), "Réessayer"),
+    onClose && h("button", { className: "banner-close", type: "button", onClick: onClose, "aria-label": "Fermer le message" }, "×"),
+  );
+}
+
+function LoadingState({ label = "Chargement des données..." }) {
+  return h("div", { className: "loading-state", role: "status" }, h(Icon, { name: "loader-circle", size: 25 }), h("span", null, label));
+}
+
+function Login({ onLogin, initialMessage = "" }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [message, setMessage] = useState(initialMessage);
+  const [busy, setBusy] = useState(false);
+  const submitLock = useRef(false);
+
+  useEffect(() => setMessage(initialMessage), [initialMessage]);
 
   async function submit(event) {
     event.preventDefault();
-    setMessage("Connexion en cours...");
+    if (submitLock.current) return;
+    submitLock.current = true;
+    setBusy(true);
+    setMessage("Connexion sécurisée en cours...");
     try {
       await onLogin(email, password);
-    } catch {
-      setMessage("Email ou mot de passe incorrect.");
+    } catch (error) {
+      if (error?.code === "LOGIN_RATE_LIMITED") setMessage(`${error.message}${error.retryAfter ? ` Réessayez dans ${error.retryAfter} s.` : ""}`);
+      else if (error?.code === "INVALID_CREDENTIALS") setMessage("Adresse e-mail ou mot de passe incorrect.");
+      else setMessage(error?.message || "La connexion a échoué.");
+    } finally {
+      submitLock.current = false;
+      setBusy(false);
     }
-  }
-
-  function demo(address) {
-    setEmail(address);
-    setPassword("richbond123");
-    onLogin(address, "richbond123").catch(() => setMessage("Impossible de connecter ce compte demo."));
   }
 
   return h(
@@ -183,25 +261,88 @@ function Login({ onLogin }) {
     h(
       "div",
       { className: "login-panel" },
-      h(Brand, { login: true }),
-      h("div", null, h("p", { className: "eyebrow" }, "Accès sécurisé"), h("h1", null, "Connexion"), h("p", { className: "muted" }, "Connectez-vous avec votre compte pour accéder uniquement à votre espace de travail.")),
       h(
-        "form",
-        { className: "login-form", onSubmit: submit },
-        h("label", null, h("span", null, "Email"), h("input", { type: "email", value: email, onChange: (e) => setEmail(e.target.value), required: true })),
-        h("label", null, h("span", null, "Mot de passe"), h("input", { type: "password", value: password, onChange: (e) => setPassword(e.target.value), required: true })),
-        h("button", { className: "primary-button", type: "submit" }, "Se connecter"),
-        h("p", { className: "form-message muted" }, message),
+        "div",
+        { className: "login-intro" },
+        h(Brand, { login: true }),
+        h(
+          "div",
+          { className: "login-intro-copy" },
+          h("span", { className: "system-status" }, h("span", { className: "pulse-dot" }), "Système opérationnel"),
+          h("h2", null, "Pilotez l'excellence industrielle."),
+          h("p", null, "Une vision claire des tâches, des engagements et des validations de votre usine."),
+        ),
+        h(
+          "div",
+          { className: "login-stats" },
+          h("div", null, h("strong", null, "Temps réel"), h("span", null, "Suivi de production")),
+          h("div", null, h("strong", null, "2 espaces"), h("span", null, "Accès par fonction")),
+        ),
       ),
       h(
         "div",
-        { className: "demo-accounts" },
-        h("strong", null, "Comptes de démonstration"),
-        h("button", { type: "button", onClick: () => demo("nadia@richbond.local") }, "Superviseur : Nadia"),
-        h("button", { type: "button", onClick: () => demo("sara@richbond.local") }, "Superviseur : Sara"),
-        h("button", { type: "button", onClick: () => demo("youssef@richbond.local") }, "Responsable : Youssef"),
-        h("span", null, "Mot de passe : richbond123"),
+        { className: "login-content" },
+        h("div", null, h("p", { className: "eyebrow" }, "Portail Richbond"), h("h1", null, "Bienvenue"), h("p", { className: "muted" }, "Connectez-vous à votre espace de travail sécurisé.")),
+        h(
+          "form",
+          { className: "login-form", onSubmit: submit, "aria-busy": busy },
+          h("label", null, h("span", null, "Adresse e-mail"), h("div", { className: "input-with-icon" }, h(Icon, { name: "mail" }), h("input", { type: "email", value: email, autoComplete: "username", onChange: (e) => setEmail(e.target.value), disabled: busy, required: true }))),
+          h("label", null, h("span", null, "Mot de passe"), h("div", { className: "input-with-icon" }, h(Icon, { name: "lock-keyhole" }), h("input", { type: "password", value: password, autoComplete: "current-password", onChange: (e) => setPassword(e.target.value), disabled: busy, required: true }))),
+          h("button", { className: "primary-button login-submit", type: "submit", disabled: busy }, h("span", null, busy ? "Connexion..." : "Se connecter"), h(Icon, { name: busy ? "loader-circle" : "arrow-right" })),
+          h("p", { className: "form-message muted" }, message),
+        ),
+        h("div", { className: "security-note" }, h(Icon, { name: "shield-check" }), h("span", null, "Votre accès est personnel. Les tentatives et les actions sensibles sont protégées et journalisées.")),
       ),
+    ),
+  );
+}
+
+function PasswordChange({ user, onChangePassword, onLogout }) {
+  const [form, setForm] = useState({ currentPassword: "", newPassword: "", confirmation: "" });
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submitLock = useRef(false);
+  useUnsavedChanges(Object.values(form).some(Boolean) && !busy);
+
+  async function submit(event) {
+    event.preventDefault();
+    if (submitLock.current) return;
+    if (form.newPassword !== form.confirmation) {
+      setMessage("La confirmation ne correspond pas au nouveau mot de passe.");
+      return;
+    }
+    submitLock.current = true;
+    setBusy(true);
+    setMessage("");
+    try {
+      await onChangePassword(form.currentPassword, form.newPassword);
+    } catch (error) {
+      setMessage(error?.message || "Le mot de passe n'a pas pu être modifié.");
+    } finally {
+      submitLock.current = false;
+      setBusy(false);
+    }
+  }
+
+  return h(
+    "section",
+    { className: "login-screen" },
+    h(
+      "div",
+      { className: "password-panel" },
+      h(Brand, { login: true }),
+      h("div", null, h("p", { className: "eyebrow" }, "Sécurisation du compte"), h("h1", null, "Créez votre mot de passe"), h("p", { className: "muted" }, `${userFullName(user)}, le mot de passe temporaire doit être remplacé avant d'accéder à l'application.`)),
+      h(
+        "form",
+        { className: "login-form", onSubmit: submit, "aria-busy": busy },
+        h("label", null, h("span", null, "Mot de passe temporaire"), h("input", { type: "password", autoComplete: "current-password", value: form.currentPassword, disabled: busy, required: true, onChange: (event) => setForm((current) => ({ ...current, currentPassword: event.target.value })) })),
+        h("label", null, h("span", null, "Nouveau mot de passe"), h("input", { type: "password", autoComplete: "new-password", minLength: 10, value: form.newPassword, disabled: busy, required: true, onChange: (event) => setForm((current) => ({ ...current, newPassword: event.target.value })) })),
+        h("label", null, h("span", null, "Confirmer le nouveau mot de passe"), h("input", { type: "password", autoComplete: "new-password", minLength: 10, value: form.confirmation, disabled: busy, required: true, onChange: (event) => setForm((current) => ({ ...current, confirmation: event.target.value })) })),
+        h("p", { className: "password-rules muted" }, "Au moins 10 caractères, avec une majuscule, une minuscule et un chiffre."),
+        h("button", { className: "primary-button", type: "submit", disabled: busy }, busy ? "Enregistrement..." : "Enregistrer et continuer"),
+        h("p", { className: "form-message error-text", role: "alert" }, message),
+      ),
+      h("button", { className: "ghost-button", type: "button", disabled: busy, onClick: onLogout }, "Se déconnecter"),
     ),
   );
 }
@@ -229,7 +370,7 @@ function TaskRow({ task, compact = false, selected = false, onOpen }) {
 }
 
 function Filters({ departments, filters, setFilters }) {
-  const statuses = ["In Progress", "Waiting for Review", "Completed"];
+  const statuses = ["Ready", "In Progress", "On Hold", "Blocked", "Waiting for Review", "Completed"];
   return h(
     "div",
     { className: "filters" },
@@ -274,7 +415,7 @@ function Dashboard({ data, tasks, setView, currentUser }) {
   );
 }
 
-function TaskForm({ data, currentUser, onCreate, onCancel }) {
+function TaskForm({ data, currentUser, onCreate, onCancel, busy }) {
   const [form, setForm] = useState({
     title: "",
     taskType: "normal",
@@ -287,6 +428,10 @@ function TaskForm({ data, currentUser, onCreate, onCancel }) {
     dueDateLabel: "",
     description: "",
   });
+  const requestId = useRef(globalThis.crypto?.randomUUID?.() || `task-${Date.now()}-${Math.random()}`);
+  const submitLock = useRef(false);
+  const isDirty = Boolean(form.title || form.description || form.dueDateLabel);
+  useUnsavedChanges(isDirty && !busy);
   const activeUsers = data.users.filter((user) => user.isActive !== false);
   const responsibleOptions = form.taskType === "consolidation" && form.consolidationType === "normal_send"
     ? activeUsers
@@ -307,20 +452,27 @@ function TaskForm({ data, currentUser, onCreate, onCancel }) {
 
   async function submit(event) {
     event.preventDefault();
+    if (submitLock.current || busy) return;
     const responsibleIds = (form.responsibleIds || []).filter(Boolean);
-    await onCreate({
+    submitLock.current = true;
+    const created = await onCreate({
       ...form,
       responsibleIds,
       assignedEmployeeId: responsibleIds[0],
       supervisorId: form.verifierId,
-      status: "In Progress",
-      createdBy: currentUser.id,
+      clientRequestId: requestId.current,
     });
+    submitLock.current = false;
+    if (created) onCancel(true);
+  }
+
+  function cancel() {
+    if (!isDirty || confirm("Abandonner les informations saisies ?")) onCancel(false);
   }
 
   return h(
     "form",
-    { className: "task-form", onSubmit: submit },
+    { className: "task-form", onSubmit: submit, "aria-busy": busy },
     inputField("Titre", "title", form.title, update, "Ex. Vérifier une anomalie de production", true, "span-2"),
     selectField("Type de tâche", "taskType", form.taskType, update, [["normal", "Tâche normale"], ["consolidation", "Tâche de consolidation"]]),
     form.taskType === "consolidation" && selectField("Sous-type", "consolidationType", form.consolidationType, update, [["normal_send", "Envoi normal"], ["urgent_meeting", "Réunion urgente"]]),
@@ -336,7 +488,7 @@ function TaskForm({ data, currentUser, onCreate, onCancel }) {
       h("div", null, responsibleOptions.map((user) => h("label", { key: user.id }, h("input", { type: "checkbox", checked: (form.responsibleIds || []).includes(user.id), onChange: () => toggleResponsible(user.id) }), h("span", null, userFullName(user))))),
     ),
     h("label", { className: "span-2" }, h("span", null, "Description"), h("textarea", { value: form.description, onChange: (e) => update("description", e.target.value), placeholder: "Contexte, anomalie, perte, consignes ou résultat attendu..." })),
-    h("div", { className: "form-actions span-2" }, h("button", { className: "primary-button", type: "submit" }, "Créer la tâche"), h("button", { className: "ghost-button", type: "button", onClick: onCancel }, "Annuler")),
+    h("div", { className: "form-actions span-2" }, h("button", { className: "primary-button", type: "submit", disabled: busy }, busy ? "Création..." : "Créer la tâche"), h("button", { className: "ghost-button", type: "button", disabled: busy, onClick: cancel }, "Annuler")),
   );
 }
 
@@ -348,17 +500,17 @@ function selectField(label, name, value, update, options) {
   return h("label", null, h("span", null, label), h("select", { name, value, onChange: (e) => update(name, e.target.value), required: true }, options.map(([id, text]) => h("option", { key: id, value: id }, text))));
 }
 
-function Tasks({ data, tasks, filters, setFilters, currentUser, onCreateTask }) {
+function Tasks({ data, tasks, filters, setFilters, currentUser, onCreateTask, busy }) {
   const [showForm, setShowForm] = useState(false);
-  const columns = ["In Progress", "Waiting for Review", "Completed"];
+  const columns = ["Ready", "In Progress", "Waiting for Review", "Completed"];
   return h(
     React.Fragment,
     null,
     h(
       "article",
       { className: "panel" },
-      h("div", { className: "panel-header" }, h("h2", null, "Tâches"), h("div", { className: "filters" }, h(Filters, { departments: data.departments, filters, setFilters }), roleKey(currentUser.role) === "supervisor" && h("button", { className: "primary-button", type: "button", onClick: () => setShowForm((value) => !value) }, "+ Nouvelle tâche"))),
-      showForm && h(TaskForm, { data, currentUser, onCancel: () => setShowForm(false), onCreate: async (payload) => { await onCreateTask(payload); setShowForm(false); } }),
+      h("div", { className: "panel-header" }, h("h2", null, "Tâches"), h("div", { className: "filters" }, h(Filters, { departments: data.departments, filters, setFilters }), roleKey(currentUser.role) === "supervisor" && h("button", { className: "primary-button", type: "button", disabled: busy, onClick: () => setShowForm((value) => !value) }, "+ Nouvelle tâche"))),
+      showForm && h(TaskForm, { data, currentUser, busy, onCancel: () => setShowForm(false), onCreate: onCreateTask }),
       h("div", { className: "task-board" }, columns.map((status) => h("section", { key: status, className: "board-column" }, h("h3", null, statusLabel(status)), tasks.filter((task) => task.status === status).map((task) => h(TaskCard, { key: task.id, task })), !tasks.some((task) => task.status === status) && h("p", { className: "muted" }, "Aucune tâche dans cette colonne.")))),
     ),
     h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Toutes les tâches correspondantes"), h(Pill, { color: "blue" }, `${tasks.length} lignes`)), h("div", { className: "task-list" }, tasks.map((task) => h(TaskRow, { key: task.id, task })))),
@@ -370,7 +522,7 @@ function TaskCard({ task }) {
   return h("div", { className: "task-card" }, h("div", { className: "card-meta" }, h(Pill, { color: "blue" }, task.id), task.priority && h(Pill, { color: priorityClass(task.priority) }, priorityLabel(task.priority))), h("strong", null, task.title), h("span", { className: "muted" }, `${typeLabel} / ${task.departmentName}`), h("span", { className: "muted" }, `Responsable : ${task.responsibleNames || task.assignedEmployeeName}`), h("span", { className: "muted" }, `Vérificateur : ${task.verifierName || task.supervisorName}`));
 }
 
-function Employee({ tasks, notifications = [], activeTaskId, setActiveTaskId, onTaskStatus }) {
+function Employee({ tasks, notifications = [], activeTaskId, setActiveTaskId, onTaskStatus, busy }) {
   const actionableStatuses = ["In Progress", "Ready", "On Hold", "Blocked", "Waiting for Review", "Pending", "Rejected"];
   const selectedTask = tasks.find((task) => task.id === activeTaskId);
   const selectedIsActionable = selectedTask && actionableStatuses.includes(selectedTask.status);
@@ -393,7 +545,7 @@ function Employee({ tasks, notifications = [], activeTaskId, setActiveTaskId, on
 
   return h(
     "section",
-    { className: "employee-home" },
+    { className: "employee-home", "aria-busy": busy },
     h(
       "div",
       { className: "current-task work-console" },
@@ -422,7 +574,7 @@ function Employee({ tasks, notifications = [], activeTaskId, setActiveTaskId, on
         "div",
         { className: "work-actions-panel" },
         h("div", null, h("h3", null, "Actions de production"), h("p", { className: "muted" }, employeeActionText(current.status))),
-        h("div", { className: "action-grid" }, employeeButtons(current, onTaskStatus, () => setActiveTaskId(activeTasks[0]?.id || tasks[0]?.id))),
+        h("div", { className: "action-grid" }, employeeButtons(current, onTaskStatus, () => setActiveTaskId(activeTasks[0]?.id || tasks[0]?.id), busy)),
       ),
     ),
     h("aside", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Mes tâches"), h(Pill, { color: "blue" }, `${activeTasks.length} actives`)), notifications.length > 0 && h("div", { className: "employee-history" }, h("h3", null, "Notifications"), h("div", { className: "activity-list" }, notifications.slice(0, 4).map((item) => h("div", { key: item.id, className: "activity-item" }, h("span", null, item.message), h("span", { className: "muted" }, new Date(item.createdAt).toLocaleDateString("fr-FR")))))), h("div", { className: "task-list" }, activeTasks.map((task) => h(TaskRow, { key: task.id, task, compact: true, selected: task.id === current.id, onOpen: setActiveTaskId })), activeTasks.length === 0 && h("p", { className: "muted" }, "Aucune tâche active pour le moment.")), finishedTasks.length > 0 && h("div", { className: "employee-history" }, h("h3", null, "Terminées"), h("div", { className: "task-list" }, finishedTasks.slice(0, 5).map((task) => h(TaskRow, { key: task.id, task, compact: true, selected: task.id === current.id, onOpen: setActiveTaskId }))))),
@@ -438,12 +590,12 @@ function employeeActionText(status) {
   return "Consultez l'état de cette tâche et passez à une tâche active si nécessaire.";
 }
 
-function employeeButtons(task, onTaskStatus, openNextTask) {
+function employeeButtons(task, onTaskStatus, openNextTask, busy) {
   const buttons = [];
-  const add = (label, action, primary = false) => buttons.push(h("button", { key: action, className: primary ? "primary-button" : "ghost-button", type: "button", onClick: () => onTaskStatus(task, action) }, label));
-  if (task.status === "Approved") return h("div", { className: "employee-state-message" }, h("strong", null, "Tâche terminée"), h("span", { className: "muted" }, "Le vérificateur a validé ce travail."), h("button", { className: "ghost-button", type: "button", onClick: openNextTask }, "Voir une tâche active"));
-  if (task.status === "Completed") return h("div", { className: "employee-state-message" }, h("strong", null, "Tâche terminée"), h("span", { className: "muted" }, "Cette tâche est archivée dans votre historique."), h("button", { className: "ghost-button", type: "button", onClick: openNextTask }, "Voir une tâche active"));
-  if (task.status === "Cancelled") return h("div", { className: "employee-state-message" }, h("strong", null, "Tâche annulée"), h("span", { className: "muted" }, "Aucune intervention n'est nécessaire sur cette tâche."), h("button", { className: "ghost-button", type: "button", onClick: openNextTask }, "Voir une tâche active"));
+  const add = (label, action, primary = false) => buttons.push(h("button", { key: action, className: primary ? "primary-button" : "ghost-button", type: "button", disabled: busy, onClick: () => onTaskStatus(task, action) }, label));
+  if (task.status === "Approved") return h("div", { className: "employee-state-message" }, h("strong", null, "Tâche terminée"), h("span", { className: "muted" }, "Le vérificateur a validé ce travail."), h("button", { className: "ghost-button", type: "button", disabled: busy, onClick: openNextTask }, "Voir une tâche active"));
+  if (task.status === "Completed") return h("div", { className: "employee-state-message" }, h("strong", null, "Tâche terminée"), h("span", { className: "muted" }, "Cette tâche est archivée dans votre historique."), h("button", { className: "ghost-button", type: "button", disabled: busy, onClick: openNextTask }, "Voir une tâche active"));
+  if (task.status === "Cancelled") return h("div", { className: "employee-state-message" }, h("strong", null, "Tâche annulée"), h("span", { className: "muted" }, "Aucune intervention n'est nécessaire sur cette tâche."), h("button", { className: "ghost-button", type: "button", disabled: busy, onClick: openNextTask }, "Voir une tâche active"));
   if (task.status === "Waiting for Review") {
     add("Ajouter une note", "note");
     buttons.push(h("span", { key: "review-info", className: "employee-state-message muted" }, "Envoyée au vérificateur pour validation."));
@@ -463,7 +615,7 @@ function employeeButtons(task, onTaskStatus, openNextTask) {
   return buttons;
 }
 
-function Supervisor({ data, tasks, filters, setFilters, currentUser, onReview, onUpdateTask, onDeleteTask }) {
+function Supervisor({ data, tasks, filters, setFilters, currentUser, onReview, onUpdateTask, onDeleteTask, busy }) {
   const waiting = tasks.filter((task) => task.status === "Waiting for Review");
   const teamUsers = data.users.filter((user) => roleKey(user.role) === "employee").filter((user) => user.departmentId === currentUser.departmentId);
   return h(
@@ -476,7 +628,7 @@ function Supervisor({ data, tasks, filters, setFilters, currentUser, onReview, o
       { className: "grid-2" },
       h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "En attente de vérification"), h(Pill, { color: "amber" }, "Vérificateur désigné")), h("div", { className: "task-list" }, waiting.map((task) => {
         const canVerify = (task.verifierId || task.supervisorId) === currentUser.id;
-        return h("div", { key: task.id, className: "task-row" }, h("div", null, h("strong", null, `${task.id} / ${task.title}`), h("p", { className: "muted" }, `${task.departmentName} / Responsable : ${task.responsibleNames || task.assignedEmployeeName} / Vérificateur : ${task.verifierName || task.supervisorName}`)), h("div", { className: "card-meta" }, canVerify ? h("button", { className: "primary-button", type: "button", onClick: () => onReview(task, true) }, "Valider") : h(Pill, { color: "amber" }, "Lecture seule"), canVerify && h("button", { className: "ghost-button", type: "button", onClick: () => onReview(task, false) }, "Refuser")));
+        return h("div", { key: task.id, className: "task-row" }, h("div", null, h("strong", null, `${task.id} / ${task.title}`), h("p", { className: "muted" }, `${task.departmentName} / Responsable : ${task.responsibleNames || task.assignedEmployeeName} / Vérificateur : ${task.verifierName || task.supervisorName}`)), h("div", { className: "card-meta" }, canVerify ? h("button", { className: "primary-button", type: "button", disabled: busy, onClick: () => onReview(task, true) }, "Valider") : h(Pill, { color: "amber" }, "Lecture seule"), canVerify && h("button", { className: "ghost-button", type: "button", disabled: busy, onClick: () => onReview(task, false) }, "Refuser")));
       }), waiting.length === 0 && h("p", { className: "muted" }, "Aucune tâche en attente."))),
       h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Charge des employés"), h(Pill, { color: "green" }, "Équilibrée")), h("div", { className: "report-list" }, teamUsers.map((user) => h("div", { key: user.id, className: "report-row" }, h("span", null, h("strong", null, userFullName(user)), h("br"), h("small", { className: "muted" }, user.departmentName)), h("strong", null, `${user.load}%`))))),
     ),
@@ -495,15 +647,15 @@ function Supervisor({ data, tasks, filters, setFilters, currentUser, onReview, o
             h(
               "div",
               { className: "card-meta" },
-              h("button", { className: "ghost-button", type: "button", onClick: () => {
+              h("button", { className: "ghost-button", type: "button", disabled: busy, onClick: () => {
                 const dueDateLabel = prompt("Nouvelle date d'échéance (AAAA-MM-JJ) :", task.dueDateLabel || "");
                 if (dueDateLabel) onUpdateTask(task.id, { dueDateLabel, dueDateChangeRequest: "" });
               } }, "Modifier date"),
-              h("button", { className: "ghost-button", type: "button", onClick: () => {
+              h("button", { className: "ghost-button", type: "button", disabled: busy, onClick: () => {
                 const employeeId = prompt("ID du nouveau responsable :", task.assignedEmployeeId || "");
                 if (employeeId) onUpdateTask(task.id, { assignedEmployeeId: employeeId, responsibleIds: [employeeId] });
               } }, "Réaffecter"),
-              h("button", { className: "ghost-button", type: "button", onClick: () => onDeleteTask(task) }, "Supprimer"),
+              h("button", { className: "ghost-button", type: "button", disabled: busy, onClick: () => onDeleteTask(task) }, "Supprimer"),
             ),
           ),
         ),
@@ -516,17 +668,33 @@ function userInitials(user) {
   return `${user?.firstName?.[0] || ""}${user?.lastName?.[0] || ""}`.toUpperCase() || "RB";
 }
 
-function Users({ data, search, onCreateUser, onUpdateUser }) {
+function Users({ data, search, onCreateUser, onUpdateUser, busy }) {
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ firstName: "", lastName: "", email: "", phone: "", role: "Employé", departmentId: data.departments[0]?.id || "" });
+  const initialForm = { firstName: "", lastName: "", email: "", phone: "", role: "Employé", departmentId: data.departments[0]?.id || "", temporaryPassword: "" };
+  const [form, setForm] = useState(initialForm);
   const query = search.toLowerCase();
   const rows = query ? data.users.filter((user) => `${userFullName(user)} ${user.email} ${user.role} ${user.departmentName}`.toLowerCase().includes(query)) : data.users;
   const activeCount = rows.filter((user) => user.isActive).length;
   const supervisorCount = rows.filter((user) => roleKey(user.role) === "supervisor").length;
   const employeeCount = rows.length - supervisorCount;
+  const isDirty = Boolean(form.firstName || form.lastName || form.email || form.phone || form.temporaryPassword);
+  useUnsavedChanges(showForm && isDirty && !busy);
 
   function update(name, value) {
     setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    const created = await onCreateUser(form);
+    if (created) {
+      setForm(initialForm);
+      setShowForm(false);
+    }
+  }
+
+  function closeForm() {
+    if (!isDirty || confirm("Abandonner les informations saisies ?")) setShowForm(false);
   }
 
   return h(
@@ -536,7 +704,7 @@ function Users({ data, search, onCreateUser, onUpdateUser }) {
       "div",
       { className: "panel-header" },
       h("div", null, h("h2", null, "Utilisateurs de l'usine"), h("p", { className: "muted" }, "Vue organisée des vérificateurs et des responsables actifs.")),
-      h("button", { className: "primary-button", type: "button", onClick: () => setShowForm((value) => !value) }, "+ Créer un utilisateur"),
+      h("button", { className: "primary-button", type: "button", disabled: busy, onClick: () => setShowForm((value) => !value) }, "+ Créer un utilisateur"),
     ),
     h(
       "div",
@@ -547,7 +715,7 @@ function Users({ data, search, onCreateUser, onUpdateUser }) {
       h(Metric, { label: "Responsables", value: employeeCount, detail: "Exécution des tâches" }),
     ),
     showForm &&
-      h("form", { className: "task-form", onSubmit: async (e) => { e.preventDefault(); await onCreateUser(form); setShowForm(false); } }, inputField("Prénom", "firstName", form.firstName, update, "", true), inputField("Nom", "lastName", form.lastName, update, "", true), inputField("Email", "email", form.email, update, "prenom@richbond.local", true, "", "email"), inputField("Téléphone", "phone", form.phone, update), selectField("Rôle", "role", form.role, update, [["Employé", "Responsable"], ["Superviseur", "Vérificateur"]]), selectField("Département", "departmentId", form.departmentId, update, data.departments.map((dept) => [dept.id, dept.name])), h("div", { className: "form-actions span-2" }, h("button", { className: "primary-button", type: "submit" }, "Créer l'utilisateur"), h("button", { className: "ghost-button", type: "button", onClick: () => setShowForm(false) }, "Annuler"))),
+      h("form", { className: "task-form", onSubmit: submit, "aria-busy": busy }, inputField("Prénom", "firstName", form.firstName, update, "", true), inputField("Nom", "lastName", form.lastName, update, "", true), inputField("Email", "email", form.email, update, "prenom@richbond.local", true, "", "email"), inputField("Téléphone", "phone", form.phone, update), selectField("Rôle", "role", form.role, update, [["Employé", "Responsable"], ["Superviseur", "Vérificateur"]]), selectField("Département", "departmentId", form.departmentId, update, data.departments.map((dept) => [dept.id, dept.name])), inputField("Mot de passe temporaire", "temporaryPassword", form.temporaryPassword, update, "10 caractères minimum", true, "span-2", "password"), h("p", { className: "password-rules muted span-2" }, "Le nouvel utilisateur devra le remplacer à sa première connexion."), h("div", { className: "form-actions span-2" }, h("button", { className: "primary-button", type: "submit", disabled: busy }, busy ? "Création..." : "Créer l'utilisateur"), h("button", { className: "ghost-button", type: "button", disabled: busy, onClick: closeForm }, "Annuler"))),
     h(
       "div",
       { className: "user-grid" },
@@ -570,7 +738,7 @@ function Users({ data, search, onCreateUser, onUpdateUser }) {
             h("div", null, h("span", null, "Téléphone"), h("strong", null, user.phone || "Non renseigné")),
             h("div", null, h("span", null, "Charge"), h("strong", null, `${Number(user.load || 0)}%`)),
           ),
-          h("div", { className: "user-actions" }, h("button", { className: "ghost-button", type: "button", onClick: () => onUpdateUser(user.id, { isActive: !user.isActive }) }, user.isActive ? "Désactiver" : "Activer")),
+          h("div", { className: "user-actions" }, h("button", { className: "ghost-button", type: "button", disabled: busy, onClick: () => onUpdateUser(user.id, { isActive: !user.isActive }) }, user.isActive ? "Désactiver" : "Activer")),
         ),
       ),
       rows.length === 0 && h("p", { className: "muted" }, "Aucun utilisateur ne correspond à la recherche."),
@@ -578,23 +746,23 @@ function Users({ data, search, onCreateUser, onUpdateUser }) {
   );
 }
 
-function Settings({ data, onCreateDepartment }) {
+function Settings({ data, onCreateDepartment, busy }) {
   const [form, setForm] = useState({ name: "", description: "", capacity: 50 });
   const update = (name, value) => setForm((current) => ({ ...current, [name]: value }));
+  const isDirty = Boolean(form.name || form.description);
+  useUnsavedChanges(isDirty && !busy);
+
+  async function submit(event) {
+    event.preventDefault();
+    if (await onCreateDepartment(form)) setForm({ name: "", description: "", capacity: 50 });
+  }
+
   return h(
     "div",
     { className: "grid-2" },
-    h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Départements"), h(Pill, { color: "blue" }, `${data.departments.length} départements`)), h("form", { className: "department-form", onSubmit: async (e) => { e.preventDefault(); await onCreateDepartment(form); setForm({ name: "", description: "", capacity: 50 }); } }, inputField("Nom", "name", form.name, update, "Ex. Ressorts", true), inputField("Description", "description", form.description, update, "Description du département"), inputField("Capacité", "capacity", form.capacity, update, "", false, "", "number"), h("button", { className: "primary-button", type: "submit" }, "+ Ajouter")), h("div", { className: "dept-grid" }, data.departments.map((dept) => h("div", { key: dept.id, className: "dept-card" }, h("strong", null, dept.name), h("p", { className: "muted" }, dept.description))))),
-    h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Sécurité"), h(Pill, { color: "green" }, "RBAC actif")), h("div", { className: "report-list" }, ["Gestion des sessions", "Journal d'audit", "Réinitialisation du mot de passe", "Téléversement de fichiers"].map((item) => h("div", { key: item, className: "report-row" }, h("span", null, item), h(Pill, { color: "green" }, "Actif"))))),
+    h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Départements"), h(Pill, { color: "blue" }, `${data.departments.length} départements`)), h("form", { className: "department-form", onSubmit: submit, "aria-busy": busy }, inputField("Nom", "name", form.name, update, "Ex. Ressorts", true), inputField("Description", "description", form.description, update, "Description du département"), inputField("Capacité", "capacity", form.capacity, update, "", false, "", "number"), h("button", { className: "primary-button", type: "submit", disabled: busy }, busy ? "Ajout..." : "+ Ajouter")), h("div", { className: "dept-grid" }, data.departments.map((dept) => h("div", { key: dept.id, className: "dept-card" }, h("strong", null, dept.name), h("p", { className: "muted" }, dept.description))))),
+    h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Sécurité"), h(Pill, { color: "green" }, "Contrôles actifs")), h("div", { className: "report-list" }, ["Sessions authentifiées", "Autorisations par rôle", "Protection de la connexion", "Journal d'audit"].map((item) => h("div", { key: item, className: "report-row" }, h("span", null, item), h(Pill, { color: "green" }, "Actif"))))),
   );
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 function toDateInputValue(date) {
@@ -634,13 +802,6 @@ function downloadExcelReport(filename, html) {
   URL.revokeObjectURL(url);
 }
 
-function statusExcelClass(status) {
-  if (["Approved", "Completed"].includes(status)) return "status-approved";
-  if (status === "Waiting for Review") return "status-review";
-  if (status === "Blocked") return "status-blocked";
-  return "";
-}
-
 function Reports({ data }) {
   const today = useMemo(() => new Date(), []);
   const lastWeek = useMemo(() => {
@@ -659,80 +820,20 @@ function Reports({ data }) {
     setReportFilters((current) => ({ ...current, [name]: value }));
   }
 
-  const filteredTasks = data.tasks.filter((task) => {
-    const createdDate = String(task.createdAt || "").slice(0, 10);
-    const matchesStart = !reportFilters.startDate || createdDate >= reportFilters.startDate;
-    const matchesEnd = !reportFilters.endDate || createdDate <= reportFilters.endDate;
-    const matchesDepartment = !reportFilters.departmentId || task.departmentId === reportFilters.departmentId;
-    return matchesStart && matchesEnd && matchesDepartment;
-  });
-
-  const completedCount = filteredTasks.filter((task) => ["Approved", "Completed"].includes(task.status)).length;
-  const blockedCount = filteredTasks.filter((task) => task.status === "Blocked").length;
-  const reviewCount = filteredTasks.filter((task) => task.status === "Waiting for Review").length;
+  const filteredTasks = filterTasksForReport(data.tasks, reportFilters);
+  const reportSummary = summarizeReport(filteredTasks);
   const kpiUsers = data.users
     .filter((user) => roleKey(user.role) === "employee")
     .filter((user) => filteredTasks.some((task) => taskResponsibleIds(task).includes(user.id)));
 
   function exportReport() {
-    const departmentName = reportFilters.departmentId ? data.departments.find((dept) => dept.id === reportFilters.departmentId)?.name || reportFilters.departmentId : "Tous les départements";
-    const generatedAt = new Date().toLocaleString("fr-FR");
-    const taskRows = filteredTasks
-      .map(
-        (task, index) => `
-          <tr class="${statusExcelClass(task.status)}">
-            <td>${index + 1}</td>
-            <td>${escapeHtml(task.id)}</td>
-            <td>${escapeHtml(task.title)}</td>
-            <td>${escapeHtml(statusLabel(task.status))}</td>
-            <td>${escapeHtml(priorityLabel(task.priority))}</td>
-            <td>${escapeHtml(task.departmentName)}</td>
-            <td>${escapeHtml(task.assignedEmployeeName)}</td>
-            <td>${escapeHtml(task.batchNumber)}</td>
-            <td>${escapeHtml(task.quantity)}</td>
-            <td>${escapeHtml(task.productionLine)}</td>
-            <td>${escapeHtml(dueLabel(task.dueDateLabel))}</td>
-            <td>${escapeHtml(String(task.createdAt || "").slice(0, 10))}</td>
-            <td>${escapeHtml(Array.isArray(task.notes) && task.notes[0] ? task.notes[0].message : "")}</td>
-          </tr>`,
-      )
-      .join("");
-
-    const html = `
-      <table>
-        <tr><td class="title" colspan="13">Rapport de production Richbond</td></tr>
-        <tr><td class="label">Généré le</td><td colspan="12">${escapeHtml(generatedAt)}</td></tr>
-        <tr><td class="label">Période</td><td colspan="12">${escapeHtml(reportFilters.startDate || "Début")} au ${escapeHtml(reportFilters.endDate || "Fin")}</td></tr>
-        <tr><td class="label">Département</td><td colspan="12">${escapeHtml(departmentName)}</td></tr>
-        <tr><td class="label">Type de rapport</td><td colspan="12">Tâches de production</td></tr>
-        <tr><td colspan="13"></td></tr>
-        <tr><td class="section" colspan="13">Resume</td></tr>
-        <tr>
-          <td class="label">Tâches exportées</td><td class="metric">${filteredTasks.length}</td>
-          <td class="label">Terminées</td><td class="metric">${completedCount}</td>
-          <td class="label">En validation</td><td class="metric">${reviewCount}</td>
-          <td class="label">Bloquées</td><td class="metric">${blockedCount}</td>
-          <td colspan="5" class="muted">Les lignes colorées indiquent les statuts importants.</td>
-        </tr>
-        <tr><td colspan="13"></td></tr>
-        <tr><td class="section" colspan="13">Détails des tâches</td></tr>
-        <tr>
-          <th>N</th>
-          <th>ID</th>
-          <th>Tâche</th>
-          <th>Statut</th>
-          <th>Priorité</th>
-          <th>Département</th>
-          <th>Employé</th>
-          <th>Lot</th>
-          <th>Quantité</th>
-          <th>Ligne</th>
-          <th>Échéance</th>
-          <th>Créée le</th>
-          <th>Dernière note</th>
-        </tr>
-        ${taskRows || '<tr><td colspan="13">Aucune tâche trouvée pour ces filtres.</td></tr>'}
-      </table>`;
+    const html = buildProductionReportHtml({
+      tasks: filteredTasks,
+      filters: reportFilters,
+      departments: data.departments,
+      formatters: { status: statusLabel, priority: priorityLabel, due: dueLabel },
+      generatedAt: new Date().toLocaleString("fr-FR"),
+    });
 
     downloadExcelReport(`rapport-richbond-${reportFilters.startDate || "debut"}-${reportFilters.endDate || "fin"}.xls`, html);
   }
@@ -758,7 +859,7 @@ function Reports({ data }) {
         h("label", null, h("span", null, "Type de rapport"), h("select", { value: reportFilters.reportType, onChange: (e) => update("reportType", e.target.value) }, h("option", { value: "tasks" }, "Tâches de production"))),
       ),
     ),
-    h("div", { className: "metrics-grid" }, h(Metric, { label: "Tâches exportées", value: filteredTasks.length, detail: "Selon les filtres" }), h(Metric, { label: "Terminées", value: completedCount, detail: "Approuvées ou terminées" }), h(Metric, { label: "En validation", value: reviewCount, detail: "Attente superviseur" }), h(Metric, { label: "Bloquées", value: blockedCount, detail: "Action nécessaire" })),
+    h("div", { className: "metrics-grid" }, h(Metric, { label: "Tâches exportées", value: reportSummary.total, detail: "Selon les filtres" }), h(Metric, { label: "Terminées", value: reportSummary.completed, detail: "Approuvées ou terminées" }), h(Metric, { label: "En validation", value: reportSummary.review, detail: "Attente du vérificateur" }), h(Metric, { label: "Bloquées", value: reportSummary.blocked, detail: "Action nécessaire" })),
     h(
       "article",
       { className: "panel" },
@@ -774,23 +875,25 @@ function Reports({ data }) {
   );
 }
 
-function App() {
-  const storedUser = (() => {
-    try {
-      return JSON.parse(localStorage.getItem("richbond-user") || "null");
-    } catch {
-      return null;
-    }
-  })();
-  const [currentUser, setCurrentUser] = useState(storedUser);
+export function App() {
+  const [session, setSession] = useState(() => loadSession());
+  const currentUser = session?.user || null;
   const [data, setData] = useState(emptyData);
-  const [view, setView] = useState(storedUser && roleKey(storedUser.role || storedUser.roleKey) === "employee" ? "employee" : "dashboard");
-  const [theme, setTheme] = useState(localStorage.getItem("richbond-theme") || "dark");
+  const [view, setView] = useState(() => currentUser && roleKey(currentUser.role || currentUser.roleKey) === "employee" ? "employee" : "dashboard");
+  const [theme, setTheme] = useState(() => localStorage.getItem("richbond-theme") || "dark");
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({ departmentId: "", status: "" });
   const [activeTaskId, setActiveTaskId] = useState("");
-
+  const [loading, setLoading] = useState(Boolean(currentUser && !currentUser.requiresPasswordChange));
+  const [online, setOnline] = useState(() => navigator.onLine !== false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [notice, setNotice] = useState("");
+  const [loginMessage, setLoginMessage] = useState("");
+  const [pendingAction, setPendingAction] = useState("");
+  const mutationLock = useRef(false);
+  const previousOnline = useRef(online);
   const currentRole = roleKey(currentUser?.role || currentUser?.roleKey);
+  const busy = Boolean(pendingAction);
 
   useEffect(() => {
     document.documentElement.classList.toggle("light", theme === "light");
@@ -798,132 +901,248 @@ function App() {
   }, [theme]);
 
   useEffect(() => {
-    if (currentUser) refresh();
-  }, [currentUser]);
+    const handleOnline = () => setOnline(true);
+    const handleOffline = () => setOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
-  async function refresh() {
-    setData(await api("/api/bootstrap"));
-  }
+  useEffect(() => {
+    if (!session || currentUser?.requiresPasswordChange) {
+      setLoading(false);
+      return;
+    }
+    refresh({ showLoading: true }).catch(() => undefined);
+  }, [session?.token, currentUser?.requiresPasswordChange]);
 
-  async function login(email, password) {
-    const user = await api("/api/login", { method: "POST", body: JSON.stringify({ email, password }) });
-    const normalized = { ...user, roleKey: roleKey(user.role || user.roleKey) };
-    localStorage.setItem("richbond-user", JSON.stringify(normalized));
-    setCurrentUser(normalized);
-    setView(roleKey(normalized.role) === "employee" ? "employee" : "dashboard");
-  }
+  useEffect(() => {
+    const reconnected = online && previousOnline.current === false;
+    previousOnline.current = online;
+    if (reconnected && session && !currentUser?.requiresPasswordChange) refresh().catch(() => undefined);
+  }, [online]);
 
-  function logout() {
-    localStorage.removeItem("richbond-user");
-    setCurrentUser(null);
+  function endSession(message = "") {
+    clearSession();
+    setSession(null);
     setData(emptyData);
     setView("dashboard");
     setSearch("");
     setFilters({ departmentId: "", status: "" });
+    setErrorMessage("");
+    setNotice("");
+    setLoginMessage(message);
+  }
+
+  async function request(path, options = {}) {
+    try {
+      return await apiClient.request(path, { ...options, token: options.token ?? session?.token });
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401 && session) {
+        endSession("Votre session a expiré. Connectez-vous de nouveau.");
+      } else if (error instanceof ApiError && error.code === "PASSWORD_CHANGE_REQUIRED" && session) {
+        const nextSession = { ...session, user: { ...session.user, requiresPasswordChange: true } };
+        saveSession(nextSession);
+        setSession(nextSession);
+      }
+      throw error;
+    }
+  }
+
+  async function refresh({ showLoading = false } = {}) {
+    if (!session?.token) return false;
+    if (showLoading) setLoading(true);
+    try {
+      const nextData = await request("/api/bootstrap");
+      setData(nextData);
+      setErrorMessage("");
+      return true;
+    } catch (error) {
+      setErrorMessage(error?.message || "Les données n'ont pas pu être chargées.");
+      throw error;
+    } finally {
+      if (showLoading) setLoading(false);
+    }
+  }
+
+  async function login(email, password) {
+    const result = await apiClient.request("/api/login", { method: "POST", body: JSON.stringify({ email, password }) });
+    const normalizedUser = { ...result.user, roleKey: roleKey(result.user.role || result.user.roleKey) };
+    const nextSession = { token: result.token, expiresAt: result.expiresAt, user: normalizedUser };
+    saveSession(nextSession);
+    setSession(nextSession);
+    setLoginMessage("");
+    setErrorMessage("");
+    setView(roleKey(normalizedUser.role) === "employee" ? "employee" : "dashboard");
+  }
+
+  async function changePassword(currentPassword, newPassword) {
+    const result = await request("/api/change-password", {
+      method: "POST",
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    const nextSession = { ...session, user: { ...result.user, roleKey: roleKey(result.user.role || result.user.roleKey) } };
+    saveSession(nextSession);
+    setSession(nextSession);
+    setNotice("Votre mot de passe a été enregistré.");
+  }
+
+  async function logout() {
+    const token = session?.token;
+    try {
+      if (token) await apiClient.request("/api/logout", { method: "POST", token });
+    } catch {
+      // The local session must still be removed when the server is unreachable.
+    } finally {
+      endSession();
+    }
+  }
+
+  async function runMutation(actionLabel, successMessage, operation) {
+    if (mutationLock.current) return false;
+    mutationLock.current = true;
+    setPendingAction(actionLabel);
+    setErrorMessage("");
+    setNotice("");
+    try {
+      await operation();
+      setNotice(successMessage);
+      try {
+        await refresh();
+      } catch {
+        // The mutation succeeded; the retry banner will refresh the stale view.
+      }
+      return true;
+    } catch (error) {
+      setErrorMessage(error?.message || "L'opération n'a pas pu être effectuée.");
+      return false;
+    } finally {
+      mutationLock.current = false;
+      setPendingAction("");
+    }
   }
 
   const scopedTasks = useMemo(() => {
     if (!currentUser) return [];
-    const base = currentRole === "supervisor"
-      ? data.tasks.filter((task) => task.departmentId === currentUser.departmentId || (task.verifierId || task.supervisorId) === currentUser.id)
-      : data.tasks.filter((task) => taskResponsibleIds(task).includes(currentUser.id));
-    return base
+    return data.tasks
       .filter((task) => !filters.departmentId || task.departmentId === filters.departmentId)
       .filter((task) => !filters.status || task.status === filters.status)
       .filter((task) => !search || Object.values(task).join(" ").toLowerCase().includes(search.toLowerCase()));
-  }, [data.tasks, currentUser, currentRole, filters, search]);
+  }, [data.tasks, currentUser, filters, search]);
 
   async function createTask(payload) {
-    await api("/api/tasks", { method: "POST", body: JSON.stringify(payload) });
-    await refresh();
+    return runMutation("Création de la tâche", "La tâche a été créée et affectée.", () => request("/api/tasks", { method: "POST", body: JSON.stringify(payload) }));
   }
 
   async function createUser(payload) {
-    await api("/api/users", { method: "POST", body: JSON.stringify(payload) });
-    await refresh();
+    return runMutation("Création de l'utilisateur", "L'utilisateur a été créé.", () => request("/api/users", { method: "POST", body: JSON.stringify(payload) }));
   }
 
   async function updateUser(id, patch) {
-    await api(`/api/users/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) });
-    await refresh();
+    return runMutation("Mise à jour de l'utilisateur", "Le compte utilisateur a été mis à jour.", () => request(`/api/users/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }));
   }
 
   async function createDepartment(payload) {
-    await api("/api/departments", { method: "POST", body: JSON.stringify(payload) });
-    await refresh();
+    return runMutation("Création du département", "Le département a été ajouté.", () => request("/api/departments", { method: "POST", body: JSON.stringify(payload) }));
   }
 
   async function updateTaskById(id, patch) {
-    await api(`/api/tasks/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) });
-    await refresh();
+    return runMutation("Mise à jour de la tâche", "La tâche a été mise à jour.", () => request(`/api/tasks/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }));
   }
 
   async function deleteTask(task) {
-    if (!confirm(`Supprimer définitivement la tâche ${task.id} ?`)) return;
-    await api(`/api/tasks/${encodeURIComponent(task.id)}`, { method: "DELETE" });
-    await refresh();
+    if (!confirm(`Supprimer définitivement la tâche ${task.id} ?`)) return false;
+    return runMutation("Suppression de la tâche", "La tâche a été supprimée.", () => request(`/api/tasks/${encodeURIComponent(task.id)}`, { method: "DELETE" }));
   }
 
   async function updateTask(task, action) {
-    const map = { start: "In Progress", resume: "In Progress", pause: "On Hold", complete: "Waiting for Review", problem: "Blocked", note: task.status, dateChange: task.status };
-    let note = "";
-    if (action === "problem") note = prompt("Décrivez le problème rencontré :") || "Problème signalé par l'employé.";
+    const statusByAction = { start: "In Progress", resume: "In Progress", pause: "On Hold", complete: "Waiting for Review", problem: "Blocked", note: task.status };
+    let payload;
     if (action === "dateChange") {
       const dueDateChangeRequest = prompt("Expliquez la demande de changement de date :") || "";
-      if (!dueDateChangeRequest) return;
-      await api(`/api/tasks/${encodeURIComponent(task.id)}`, { method: "PATCH", body: JSON.stringify({ status: task.status, dueDateChangeRequest }) });
-      await refresh();
-      return;
+      if (!dueDateChangeRequest) return false;
+      payload = { status: task.status, dueDateChangeRequest };
+    } else {
+      let note = "";
+      if (action === "problem") note = prompt("Décrivez le problème rencontré :") || "Problème signalé par le responsable.";
+      if (action === "note") {
+        note = prompt("Ajouter une note :") || "";
+        if (!note) return false;
+      }
+      payload = { status: statusByAction[action], note };
     }
-    if (action === "note") {
-      note = prompt("Ajouter une note :") || "";
-      if (!note) return;
-    }
-    await api(`/api/tasks/${encodeURIComponent(task.id)}`, { method: "PATCH", body: JSON.stringify({ status: map[action], note }) });
     setActiveTaskId(task.id);
-    await refresh();
+    return runMutation("Mise à jour de la tâche", "L'action a été enregistrée.", () => request(`/api/tasks/${encodeURIComponent(task.id)}`, { method: "PATCH", body: JSON.stringify(payload) }));
   }
 
   async function reviewTask(task, approved) {
     const note = approved ? "Travail validé par le vérificateur." : prompt("Motif du refus (optionnel) :") || "Tâche refusée par le vérificateur.";
-    await api(`/api/tasks/${encodeURIComponent(task.id)}`, {
+    return runMutation(approved ? "Validation de la tâche" : "Refus de la tâche", approved ? "La tâche a été validée." : "La tâche a été renvoyée au responsable.", () => request(`/api/tasks/${encodeURIComponent(task.id)}`, {
       method: "PATCH",
-      body: JSON.stringify({
-        status: approved ? "Completed" : "In Progress",
-        note,
-      }),
-    });
-    await refresh();
+      body: JSON.stringify({ status: approved ? "Completed" : "In Progress", note }),
+    }));
   }
 
-  if (!currentUser) return h(Login, { onLogin: login });
+  if (!currentUser) return h(Login, { onLogin: login, initialMessage: loginMessage });
+  if (currentUser.requiresPasswordChange) return h(PasswordChange, { user: currentUser, onChangePassword: changePassword, onLogout: logout });
 
   const allowedNav = navItems.filter((item) => item.roles.includes(currentRole));
-  if (!allowedNav.some((item) => item.id === view)) setTimeout(() => setView(allowedNav[0]?.id || "dashboard"));
 
   const pageTitle = navItems.find((item) => item.id === view)?.label || "Tableau de bord";
 
   let content;
   if (view === "dashboard") content = h(Dashboard, { data, tasks: scopedTasks, setView, currentUser });
-  if (view === "tasks") content = h(Tasks, { data, tasks: scopedTasks, filters, setFilters, currentUser, onCreateTask: createTask });
-  if (view === "employee") content = h(Employee, { tasks: scopedTasks, notifications: (data.notifications || []).filter((item) => item.userId === currentUser.id), activeTaskId, setActiveTaskId, onTaskStatus: updateTask });
-  if (view === "supervisor") content = h(Supervisor, { data, tasks: scopedTasks, filters, setFilters, currentUser, onReview: reviewTask, onUpdateTask: updateTaskById, onDeleteTask: deleteTask });
+  if (view === "tasks") content = h(Tasks, { data, tasks: scopedTasks, filters, setFilters, currentUser, onCreateTask: createTask, busy });
+  if (view === "employee") content = h(Employee, { tasks: scopedTasks, notifications: data.notifications || [], activeTaskId, setActiveTaskId, onTaskStatus: updateTask, busy });
+  if (view === "supervisor") content = h(Supervisor, { data, tasks: scopedTasks, filters, setFilters, currentUser, onReview: reviewTask, onUpdateTask: updateTaskById, onDeleteTask: deleteTask, busy });
   if (view === "reports") content = h(Reports, { data: { ...data, tasks: scopedTasks } });
-  if (view === "users") content = h(Users, { data, search, onCreateUser: createUser, onUpdateUser: updateUser });
-  if (view === "settings") content = h(Settings, { data, onCreateDepartment: createDepartment });
+  if (view === "users") content = h(Users, { data, search, onCreateUser: createUser, onUpdateUser: updateUser, busy });
+  if (view === "settings") content = h(Settings, { data, onCreateDepartment: createDepartment, busy });
 
   return h(
     "div",
     { className: "app-shell" },
-    h("aside", { className: "sidebar", "aria-label": "Navigation principale" }, h(Brand), h("nav", { className: "nav-list" }, allowedNav.map((item) => h("button", { key: item.id, className: `nav-button ${view === item.id ? "active" : ""}`, type: "button", onClick: () => setView(item.id) }, h("span", null, item.icon), h("strong", null, item.label)))), h("div", { className: "factory-pulse" }, h("span", { className: "pulse-dot" }), h("div", null, h("strong", null, "Ligne A-04"), h("span", null, "Synchronisation production")))),
+    h(
+      "aside",
+      { className: "sidebar", "aria-label": "Navigation principale" },
+      h(Brand),
+      h("div", { className: "nav-caption" }, "ESPACE DE TRAVAIL"),
+      h("nav", { className: "nav-list" }, allowedNav.map((item) => h("button", { key: item.id, className: `nav-button ${view === item.id ? "active" : ""}`, type: "button", onClick: () => setView(item.id) }, h("span", { className: "nav-icon" }, h(Icon, { name: item.icon })), h("strong", null, item.label), h(Icon, { name: "chevron-right", size: 16 })))),
+      h("div", { className: "factory-pulse" }, h("span", { className: "pulse-dot" }), h("div", null, h("strong", null, "Production connectée"), h("span", null, "Synchronisation en temps réel"))),
+    ),
     h(
       "main",
-      { className: "main" },
-      h("header", { className: "topbar" }, h("div", null, h("p", { className: "eyebrow" }, "Centre de commande"), h("h1", null, pageTitle)), h("div", { className: "topbar-actions" }, h("label", { className: "search" }, h("span", { className: "search-icon", "aria-hidden": true }, "⌕"), h("input", { type: "search", value: search, placeholder: "Rechercher tâches, lots, personnes...", onChange: (e) => { setSearch(e.target.value); if (e.target.value && !["tasks", "supervisor", "employee", "users"].includes(view)) setView(currentRole === "employee" ? "employee" : "tasks"); } })), h("div", { className: "user-chip" }, h("strong", null, userFullName(currentUser)), h("span", null, currentRole === "supervisor" ? "Vérificateur" : "Responsable")), h("button", { className: "icon-button theme-button", type: "button", title: "Changer le thème", "aria-label": "Changer le thème", onClick: () => setTheme((value) => (value === "dark" ? "light" : "dark")) }, h("span", { className: "theme-glyph", "aria-hidden": true })), h("button", { className: "ghost-button logout-button", type: "button", onClick: logout }, "Se déconnecter"))),
-      h("section", { className: "hero-status", "aria-label": "État de l'usine" }, h("div", { className: "hero-copy" }, h("p", null, "Aujourd'hui chez Richbond"), h("strong", null, "Le flux de production est stable, avec des validations à suivre par la supervision.")), h("div", { className: "hero-metrics" }, h("span", null, h("b", null, `${data.kpis?.efficiency || 91}%`), " efficacité"), h("span", null, h("b", null, data.departments.length || 0), " départements"), h("span", null, h("b", null, data.tasks.filter((task) => task.status === "Waiting for Review").length), " validations")), h("canvas", { id: "factoryCanvas", width: 720, height: 180, "aria-hidden": true })),
-      h("section", { className: "view" }, content),
+      { className: "main", "aria-busy": loading || busy },
+      h(
+        "header",
+        { className: "topbar" },
+        h("div", { className: "page-heading" }, h("p", { className: "eyebrow" }, currentRole === "supervisor" ? "Centre de pilotage" : "Espace responsable"), h("h1", null, pageTitle)),
+        h(
+          "div",
+          { className: "topbar-actions" },
+          h("label", { className: "search" }, h(Icon, { name: "search", size: 19 }), h("input", { type: "search", value: search, placeholder: "Rechercher une tâche, un lot, une personne...", onChange: (e) => { setSearch(e.target.value); if (e.target.value && !["tasks", "supervisor", "employee", "users"].includes(view)) setView(currentRole === "employee" ? "employee" : "tasks"); } })),
+          h("div", { className: "user-chip" }, h("span", { className: "user-chip-avatar" }, userInitials(currentUser)), h("span", { className: "user-chip-copy" }, h("strong", null, userFullName(currentUser)), h("small", null, currentRole === "supervisor" ? "Vérificateur" : "Responsable"))),
+          h("button", { className: "icon-button theme-button", type: "button", title: "Changer le thème", "aria-label": "Changer le thème", onClick: () => setTheme((value) => (value === "dark" ? "light" : "dark")) }, h(Icon, { name: theme === "dark" ? "sun" : "moon" })),
+          h("button", { className: "icon-button logout-button", type: "button", title: "Se déconnecter", "aria-label": "Se déconnecter", onClick: logout }, h(Icon, { name: "log-out" })),
+        ),
+      ),
+      !online && h(StatusBanner, { kind: "offline", message: "Vous êtes hors connexion. Les données affichées peuvent être anciennes." }),
+      errorMessage && h(StatusBanner, { kind: "error", message: errorMessage, onRetry: () => refresh({ showLoading: true }).catch(() => undefined), onClose: () => setErrorMessage("") }),
+      notice && h(StatusBanner, { kind: "success", message: notice, onClose: () => setNotice("") }),
+      pendingAction && h(StatusBanner, { kind: "info", message: `${pendingAction} en cours...` }),
+      h(
+        "section",
+        { className: "hero-status", "aria-label": "État de l'usine" },
+        h("div", { className: "hero-copy" }, h("span", { className: "live-label" }, h("span", { className: "pulse-dot" }), "ACTIVITÉ EN DIRECT"), h("strong", null, "La production reste stable"), h("p", null, "Les indicateurs clés et les validations sont synchronisés.")),
+        h("div", { className: "hero-metrics" }, h("span", null, h("small", null, "Efficacité"), h("b", null, `${data.kpis?.efficiency || 91}%`)), h("span", null, h("small", null, "Départements"), h("b", null, data.departments.length || 0)), h("span", null, h("small", null, "À valider"), h("b", null, data.tasks.filter((task) => task.status === "Waiting for Review").length))),
+      ),
+      h("section", { className: "view" }, loading ? h(LoadingState) : content),
     ),
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(h(App));
+const rootElement = document.getElementById("root");
+if (rootElement) createRoot(rootElement).render(h(App));

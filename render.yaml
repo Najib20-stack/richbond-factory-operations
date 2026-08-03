@@ -3,8 +3,41 @@ services:
     name: richbond-operations
     runtime: node
     plan: free
-    buildCommand: npm run check
-    startCommand: npm start
+    region: oregon
+    repo: https://github.com/Najib20-stack/richbond-factory-operations.git
+    branch: main
+    autoDeployTrigger: checksPass
+    buildCommand: npm ci && npm test && npm run build
+    startCommand: node backend/server.mjs
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
-        value: 20
+        value: 24.11.1
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_SSL_MODE
+        value: verify-full
+      - key: DATABASE_POOL_MAX
+        value: "10"
+      - key: DATABASE_CONNECTION_TIMEOUT_MS
+        value: "10000"
+      - key: DATABASE_STATEMENT_TIMEOUT_MS
+        value: "15000"
+      - key: DATABASE_AUTO_SEED
+        value: "false"
+      - key: CORS_ORIGINS
+        value: https://localhost,capacitor://localhost
+      - key: SESSION_TTL_MS
+        value: "43200000"
+      - key: LOGIN_MAX_ATTEMPTS
+        value: "5"
+      - key: LOGIN_WINDOW_MS
+        value: "900000"
+      - key: LOGIN_LOCK_MS
+        value: "900000"
+      - key: MAX_REQUEST_BODY_BYTES
+        value: "1048576"

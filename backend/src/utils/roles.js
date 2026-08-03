@@ -3,3 +3,11 @@ export function roleKey(role) {
   if (normalized.includes("admin") || normalized.includes("super")) return "supervisor";
   return "employee";
 }
+
+export function isSupervisor(user) {
+  return roleKey(user?.role) === "supervisor";
+}
+
+export function isEmployee(user) {
+  return roleKey(user?.role) === "employee";
+}
