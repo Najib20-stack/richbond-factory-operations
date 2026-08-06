@@ -30,5 +30,9 @@ export function createTask(input) {
     startedAt: null,
     completedAt: null,
     approvedAt: null,
+    rejectionReason: "",
+    rejectedBy: null,
+    rejectedAt: null,
+    refusalCount: 0,
   };
 }

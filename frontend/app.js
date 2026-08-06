@@ -23,9 +23,10 @@ import {
   Sun,
   Users as UsersIcon,
   WifiOff,
+  X,
 } from "lucide";
 import { ApiError, createApiClient } from "./apiClient.js";
-import richbondLogoUrl from "./assets/richbond-logo.svg";
+import richbondLogoUrl from "./assets/richbond-logo-white.png";
 import { buildProductionReportHtml, filterTasksForReport, summarizeReport } from "./reporting.js";
 import { clearSession, loadSession, saveSession } from "./sessionStore.js";
 import "./styles.css";
@@ -55,18 +56,19 @@ const LUCIDE_ICONS = {
   sun: Sun,
   users: UsersIcon,
   "wifi-off": WifiOff,
+  x: X,
 };
 
 const emptyData = { departments: [], users: [], tasks: [], activities: [], notifications: [], reports: [], weeklyProduction: [], kpis: {} };
 
 const navItems = [
-  { id: "dashboard", label: "Tableau de bord", icon: "layout-dashboard", roles: ["supervisor"] },
-  { id: "tasks", label: "Tâches", icon: "panels-top-left", roles: ["supervisor", "employee"] },
-  { id: "employee", label: "Responsable", icon: "clipboard-check", roles: ["employee"] },
-  { id: "supervisor", label: "Supervision", icon: "shield-check", roles: ["supervisor"] },
-  { id: "reports", label: "Rapports", icon: "chart-no-axes-combined", roles: ["supervisor"] },
-  { id: "users", label: "Utilisateurs", icon: "users", roles: ["supervisor"] },
-  { id: "settings", label: "Paramètres", icon: "settings-2", roles: ["supervisor"] },
+  { id: "dashboard", label: "Tableau de bord", icon: "layout-dashboard", roles: ["combined", "admin"] },
+  { id: "tasks", label: "Tâches", icon: "panels-top-left", roles: ["combined", "admin"] },
+  { id: "todo", label: "À faire", icon: "clipboard-check", roles: ["combined"] },
+  { id: "supervisor", label: "Supervision", icon: "shield-check", roles: ["combined", "admin"] },
+  { id: "users", label: "Utilisateurs", icon: "users", roles: ["admin"] },
+  { id: "reports", label: "Rapports", icon: "chart-no-axes-combined", roles: ["admin"] },
+  { id: "settings", label: "Paramètres", icon: "settings-2", roles: ["combined", "admin"] },
 ];
 
 const statusLabels = {
@@ -79,7 +81,7 @@ const statusLabels = {
   Completed: "Terminée",
   Blocked: "Bloquée",
   Cancelled: "Annulée",
-  Rejected: "Refusée",
+  Rejected: "Rejetée",
   Overdue: "En retard",
   Processing: "En traitement",
 };
@@ -98,8 +100,18 @@ const dueLabels = {
 };
 
 function roleKey(role) {
-  const normalized = String(role || "").toLowerCase();
-  return normalized.includes("admin") || normalized.includes("super") ? "supervisor" : "employee";
+  const normalized = String(role || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  if (!normalized) return "unknown";
+  if (normalized.includes("admin")) return "admin";
+  if (["verif", "responsable", "super", "employ", "combined"].some((marker) => normalized.includes(marker))) return "combined";
+  return "unknown";
+}
+
+function roleLabel(user) {
+  return roleKey(user?.role || user?.roleKey) === "admin" ? "Administrateur" : "Vérificateur/Responsable";
 }
 
 function statusLabel(value) {
@@ -132,6 +144,12 @@ function userFullName(user) {
 
 function taskResponsibleIds(task) {
   return Array.isArray(task.responsibleIds) && task.responsibleIds.length ? task.responsibleIds : [task.assignedEmployeeId].filter(Boolean);
+}
+
+function isTaskRelatedToUser(task, userId) {
+  return task.createdBy === userId
+    || (task.verifierId || task.supervisorId) === userId
+    || taskResponsibleIds(task).includes(userId);
 }
 
 function taskDelayDays(task) {
@@ -180,22 +198,112 @@ function Pill({ children, color = "" }) {
   return h("span", { className: `pill ${color}` }, children);
 }
 
-function Metric({ label, value, detail }) {
+function Metric({ label, value }) {
   return h(
     "article",
     { className: "metric-card" },
     h("div", { className: "metric-topline" }, h("small", null, label), h("span", { className: "metric-signal", "aria-hidden": true })),
     h("strong", null, value),
-    h("span", { className: "muted" }, detail),
   );
 }
 
 function Brand({ login = false }) {
   return h(
     "div",
-    { className: `brand brand-logo-card ${login ? "login-brand" : ""}` },
+    { className: `brand ${login ? "login-brand" : ""}` },
     h(RichbondLogo),
-    h("div", null, h("span", null, "Operations Usine")),
+  );
+}
+
+function WorkspaceTools({
+  className = "",
+  currentUser,
+  theme,
+  onThemeToggle,
+  onLogout,
+}) {
+  return h(
+    "div",
+    { className: `topbar-actions ${className}`.trim() },
+    h(
+      "div",
+      { className: "user-chip" },
+      h("span", { className: "user-chip-avatar" }, userInitials(currentUser)),
+      h(
+        "span",
+        { className: "user-chip-copy" },
+        h("strong", null, userFullName(currentUser)),
+        h("small", null, roleLabel(currentUser)),
+      ),
+    ),
+    h(
+      "button",
+      {
+        className: "icon-button theme-button",
+        type: "button",
+        title: "Changer le thème",
+        "aria-label": "Changer le thème",
+        onClick: onThemeToggle,
+      },
+      h(Icon, { name: theme === "dark" ? "sun" : "moon" }),
+    ),
+    h(
+      "button",
+      {
+        className: "icon-button logout-button",
+        type: "button",
+        title: "Se déconnecter",
+        "aria-label": "Se déconnecter",
+        onClick: onLogout,
+      },
+      h(Icon, { name: "log-out" }),
+    ),
+  );
+}
+
+function AdminScopeBar({ departments, search, setSearch, departmentId, setDepartmentId }) {
+  const hasFilters = Boolean(search || departmentId);
+  return h(
+    "section",
+    { className: "admin-scope-bar", "aria-label": "Recherche et filtres administrateur" },
+    h(
+      "label",
+      { className: "admin-search" },
+      h(Icon, { name: "search", size: 18 }),
+      h("input", {
+        type: "search",
+        value: search,
+        placeholder: "Rechercher une tâche, un utilisateur ou un statut",
+        "aria-label": "Rechercher",
+        onChange: (event) => setSearch(event.target.value),
+      }),
+    ),
+    h(
+      "label",
+      { className: "admin-department" },
+      h("span", null, "Département"),
+      h(
+        "select",
+        { value: departmentId, "aria-label": "Filtrer par département", onChange: (event) => setDepartmentId(event.target.value) },
+        h("option", { value: "" }, "Tous les départements"),
+        departments.map((department) => h("option", { key: department.id, value: department.id }, department.name)),
+      ),
+    ),
+    h(
+      "button",
+      {
+        className: "icon-button admin-reset",
+        type: "button",
+        disabled: !hasFilters,
+        title: "Réinitialiser les filtres",
+        "aria-label": "Réinitialiser les filtres",
+        onClick: () => {
+          setSearch("");
+          setDepartmentId("");
+        },
+      },
+      h(Icon, { name: "x" }),
+    ),
   );
 }
 
@@ -270,13 +378,13 @@ function Login({ onLogin, initialMessage = "" }) {
           { className: "login-intro-copy" },
           h("span", { className: "system-status" }, h("span", { className: "pulse-dot" }), "Système opérationnel"),
           h("h2", null, "Pilotez l'excellence industrielle."),
-          h("p", null, "Une vision claire des tâches, des engagements et des validations de votre usine."),
+          h("p", null, "Une vision claire des tâches, des engagements et des vérifications de votre usine."),
         ),
         h(
           "div",
           { className: "login-stats" },
           h("div", null, h("strong", null, "Temps réel"), h("span", null, "Suivi de production")),
-          h("div", null, h("strong", null, "2 espaces"), h("span", null, "Accès par fonction")),
+          h("div", null, h("strong", null, "2 rôles"), h("span", null, "Accès séparés")),
         ),
       ),
       h(
@@ -347,9 +455,18 @@ function PasswordChange({ user, onChangePassword, onLogout }) {
   );
 }
 
-function TaskRow({ task, compact = false, selected = false, onOpen }) {
+function TaskRow({ task, compact = false, selected = false, onOpen, showCreator = false }) {
   const latestNote = Array.isArray(task.notes) && task.notes[0] ? task.notes[0].message : "";
   const typeLabel = taskTypeLabels[task.taskType] || "Tâche normale";
+  const fullDetails = [
+    typeLabel,
+    task.departmentName,
+    showCreator ? `Créée par : ${task.creatorName || "Non affecté"}` : "",
+    `Responsable : ${task.responsibleNames || task.assignedEmployeeName}`,
+    `Vérificateur : ${task.verifierName || task.supervisorName}`,
+    `Échéance : ${dueLabel(task.dueDateLabel)}`,
+    latestNote ? `Note : ${latestNote}` : "",
+  ].filter(Boolean).join(" / ");
   return h(
     "div",
     { className: `task-row ${selected ? "is-selected" : ""}` },
@@ -357,7 +474,9 @@ function TaskRow({ task, compact = false, selected = false, onOpen }) {
       "div",
       null,
       h("strong", null, `${task.id} / ${task.title}`),
-      h("p", { className: "muted" }, compact ? `${task.departmentName} / ${typeLabel} / ${dueLabel(task.dueDateLabel)}` : `${typeLabel} / ${task.departmentName} / Responsable : ${task.responsibleNames || task.assignedEmployeeName} / Vérificateur : ${task.verifierName || task.supervisorName} / Échéance ${dueLabel(task.dueDateLabel)}${latestNote ? ` / Note : ${latestNote}` : ""}`),
+      h("p", { className: "muted" }, compact ? `${task.departmentName} / ${typeLabel} / ${dueLabel(task.dueDateLabel)}` : fullDetails),
+      task.rejectionReason && h("p", { className: "task-rejection-summary" }, h("strong", null, "Motif du rejet : "), task.rejectionReason),
+      showCreator && task.description && h("p", { className: "task-description" }, task.description),
     ),
     h(
       "div",
@@ -369,12 +488,12 @@ function TaskRow({ task, compact = false, selected = false, onOpen }) {
   );
 }
 
-function Filters({ departments, filters, setFilters }) {
+function Filters({ departments, filters, setFilters, showDepartment = true }) {
   const statuses = ["Ready", "In Progress", "On Hold", "Blocked", "Waiting for Review", "Completed"];
   return h(
     "div",
     { className: "filters" },
-    h(
+    showDepartment && h(
       "select",
       { value: filters.departmentId, onChange: (e) => setFilters((f) => ({ ...f, departmentId: e.target.value })) },
       h("option", { value: "" }, "Tous les départements"),
@@ -389,42 +508,53 @@ function Filters({ departments, filters, setFilters }) {
   );
 }
 
-function Dashboard({ data, tasks, setView, currentUser }) {
+function Dashboard({ data, tasks, commitmentTasks, currentUser, isAdmin = false, departmentId = "" }) {
   const activeUsers = data.users.filter((user) => user.isActive).length;
+  const monitoredUsers = data.users.filter((user) => user.isActive !== false && roleKey(user.role || user.roleKey) === "combined" && (!departmentId || user.departmentId === departmentId));
   const myNotifications = (data.notifications || []).filter((notification) => notification.userId === currentUser.id).slice(0, 6);
   return h(
     React.Fragment,
     null,
     h(
       "div",
-      { className: "metrics-grid" },
-      h(Metric, { label: "Employés actifs", value: activeUsers, detail: "Dans les départements de l'usine" }),
-      h(Metric, { label: "Tâches dues aujourd'hui", value: tasks.length, detail: "Charge de travail globale" }),
-      h(Metric, { label: "En cours", value: tasks.filter((task) => task.status === "In Progress").length, detail: "En direct sur les lignes" }),
-      h(Metric, { label: "Validations en attente", value: tasks.filter((task) => task.status === "Waiting for Review").length, detail: "File de contrôle qualité" }),
-      h(Metric, { label: "Tâches bloquées", value: tasks.filter((task) => task.status === "Blocked").length, detail: "Problème de matière ou de machine" }),
-      h(Metric, { label: "Efficacité", value: `${data.kpis?.efficiency || 91}%`, detail: "Objectif : 94%" }),
+      { className: "metrics-grid dashboard-metrics" },
+      h(Metric, { label: "Comptes actifs", value: activeUsers }),
+      h(Metric, { label: "Tâches du périmètre", value: tasks.length }),
+      h(Metric, { label: "En cours", value: tasks.filter((task) => task.status === "In Progress").length }),
+      h(Metric, { label: "Vérifications en attente", value: tasks.filter((task) => task.status === "Waiting for Review").length }),
+      h(Metric, { label: "Tâches bloquées", value: tasks.filter((task) => task.status === "Blocked").length }),
+      h(Metric, { label: isAdmin ? "Utilisateurs suivis" : "Indice de respect d'engagement", value: isAdmin ? monitoredUsers.length : `${commitmentIndex(commitmentTasks, currentUser.id)} j` }),
     ),
-    h(
+    isAdmin && h(
       "div",
-      { className: "grid-2" },
-      h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Production hebdomadaire"), h(Pill, { color: "green" }, "En direct")), h("div", { className: "chart" }, (data.weeklyProduction || []).map((item) => h("div", { key: item.day, className: "bar", style: { height: `${item.value}%` } }, h("span", null, item.day))))),
-      h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Notifications"), h(Pill, { color: "blue" }, `${myNotifications.length}`)), h("div", { className: "activity-list" }, myNotifications.map((item) => h("div", { key: item.id, className: "activity-item" }, h("span", null, item.message), h("span", { className: "muted" }, new Date(item.createdAt).toLocaleDateString("fr-FR")))), myNotifications.length === 0 && h("p", { className: "muted" }, "Aucune notification personnelle."))),
+      { className: "grid-2 admin-monitoring" },
+      h(
+        "article",
+        { className: "panel" },
+        h("div", { className: "panel-header" }, h("div", null, h("h2", null, "Indices de respect d'engagement"), h("p", { className: "muted" }, "Vérificateurs/Responsables du périmètre sélectionné.")), h(Pill, { color: "blue" }, `${monitoredUsers.length} utilisateurs`)),
+        h("div", { className: "report-list engagement-list" }, monitoredUsers.map((user) => h("div", { key: user.id, className: "report-row" }, h("span", null, h("strong", null, userFullName(user)), h("br"), h("small", { className: "muted" }, user.departmentName)), h("strong", null, `${commitmentIndex(commitmentTasks, user.id)} j`))), monitoredUsers.length === 0 && h("p", { className: "muted" }, "Aucun Vérificateur/Responsable dans ce périmètre.")),
+      ),
+      h(
+        "article",
+        { className: "panel" },
+        h("div", { className: "panel-header" }, h("div", null, h("h2", null, "Tâches du département"), h("p", { className: "muted" }, "Informations complètes selon les filtres administrateur.")), h(Pill, { color: "green" }, `${tasks.length} tâches`)),
+        h("div", { className: "task-list" }, tasks.slice(0, 10).map((task) => h(TaskRow, { key: task.id, task, showCreator: true })), tasks.length === 0 && h("p", { className: "muted" }, "Aucune tâche ne correspond aux filtres.")),
+      ),
     ),
-    h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Indice de respect d'engagement"), h("button", { className: "ghost-button", type: "button", onClick: () => setView("reports") }, "Voir le détail")), h("div", { className: "dept-grid" }, data.users.filter((user) => roleKey(user.role) === "employee").map((user) => h("div", { key: user.id, className: "dept-card" }, h("strong", null, userFullName(user)), h("p", { className: "muted" }, `${user.departmentName} / ${commitmentIndex(data.tasks, user.id)} jour(s) de retard moyen`))))),
+    h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Notifications"), h(Pill, { color: "blue" }, `${myNotifications.length}`)), h("div", { className: "activity-list" }, myNotifications.map((item) => h("div", { key: item.id, className: "activity-item" }, h("span", null, item.message), h("span", { className: "muted" }, new Date(item.createdAt).toLocaleDateString("fr-FR")))), myNotifications.length === 0 && h("p", { className: "muted" }, "Aucune notification personnelle."))),
   );
 }
 
 function TaskForm({ data, currentUser, onCreate, onCancel, busy }) {
+  const activeUsers = data.users.filter((user) => user.isActive !== false && roleKey(user.role || user.roleKey) === "combined");
   const [form, setForm] = useState({
     title: "",
     taskType: "normal",
     consolidationType: "normal_send",
     departmentId: data.departments[0]?.id || "",
-    responsibleIds: [data.users.find((user) => roleKey(user.role) === "employee")?.id || ""].filter(Boolean),
-    verifierId: currentUser.id,
+    responsibleIds: [activeUsers[0]?.id || ""].filter(Boolean),
+    verifierId: roleKey(currentUser.role || currentUser.roleKey) === "combined" ? currentUser.id : activeUsers[0]?.id || "",
     priority: "",
-    estimatedDuration: "1h",
     dueDateLabel: "",
     description: "",
   });
@@ -432,11 +562,8 @@ function TaskForm({ data, currentUser, onCreate, onCancel, busy }) {
   const submitLock = useRef(false);
   const isDirty = Boolean(form.title || form.description || form.dueDateLabel);
   useUnsavedChanges(isDirty && !busy);
-  const activeUsers = data.users.filter((user) => user.isActive !== false);
-  const responsibleOptions = form.taskType === "consolidation" && form.consolidationType === "normal_send"
-    ? activeUsers
-    : activeUsers.filter((user) => roleKey(user.role) === "employee");
-  const verifierOptions = activeUsers.filter((user) => roleKey(user.role) === "supervisor");
+  const responsibleOptions = activeUsers;
+  const verifierOptions = activeUsers;
 
   function update(name, value) {
     setForm((current) => ({ ...current, [name]: value }));
@@ -478,9 +605,8 @@ function TaskForm({ data, currentUser, onCreate, onCancel, busy }) {
     form.taskType === "consolidation" && selectField("Sous-type", "consolidationType", form.consolidationType, update, [["normal_send", "Envoi normal"], ["urgent_meeting", "Réunion urgente"]]),
     selectField("Département", "departmentId", form.departmentId, update, data.departments.map((dept) => [dept.id, dept.name])),
     selectField("Vérificateur", "verifierId", form.verifierId, update, verifierOptions.map((user) => [user.id, userFullName(user)])),
-    selectField("Priorité optionnelle", "priority", form.priority, update, [["", "Aucune"], ["Low", "Basse"], ["Medium", "Moyenne"], ["High", "Haute"], ["Critical", "Urgente"]]),
-    inputField("Date d'échéance", "dueDateLabel", form.dueDateLabel, update, "", true, "", "date"),
-    inputField("Durée estimée", "estimatedDuration", form.estimatedDuration, update, "2h 30m"),
+    selectField("Priorité optionnelle", "priority", form.priority, update, [["", "Aucune"], ["Low", "Basse"], ["Medium", "Moyenne"], ["High", "Haute"], ["Critical", "Urgente"]], false),
+    inputField("Date d'échéance", "dueDateLabel", form.dueDateLabel, update, "", true, "span-2", "date"),
     h(
       "fieldset",
       { className: "responsible-picker span-2" },
@@ -496,34 +622,52 @@ function inputField(label, name, value, update, placeholder = "", required = fal
   return h("label", { className }, h("span", null, label), h("input", { name, type, value, placeholder, required, min: type === "number" ? 1 : undefined, onChange: (e) => update(name, e.target.value) }));
 }
 
-function selectField(label, name, value, update, options) {
-  return h("label", null, h("span", null, label), h("select", { name, value, onChange: (e) => update(name, e.target.value), required: true }, options.map(([id, text]) => h("option", { key: id, value: id }, text))));
+function selectField(label, name, value, update, options, required = true) {
+  return h("label", null, h("span", null, label), h("select", { name, value, onChange: (e) => update(name, e.target.value), required }, options.map(([id, text]) => h("option", { key: id, value: id }, text))));
 }
 
-function Tasks({ data, tasks, filters, setFilters, currentUser, onCreateTask, busy }) {
+function Tasks({ data, tasks, filters, setFilters, currentUser, onCreateTask, busy, isAdmin = false }) {
   const [showForm, setShowForm] = useState(false);
   const columns = ["Ready", "In Progress", "Waiting for Review", "Completed"];
+  const createdTitle = isAdmin ? "Toutes les tâches" : "Tâches créées par moi";
+  const historyTitle = isAdmin ? "Registre détaillé des tâches" : "Historique de mes créations";
   return h(
     React.Fragment,
     null,
     h(
       "article",
       { className: "panel" },
-      h("div", { className: "panel-header" }, h("h2", null, "Tâches"), h("div", { className: "filters" }, h(Filters, { departments: data.departments, filters, setFilters }), roleKey(currentUser.role) === "supervisor" && h("button", { className: "primary-button", type: "button", disabled: busy, onClick: () => setShowForm((value) => !value) }, "+ Nouvelle tâche"))),
+      h("div", { className: "panel-header" }, h("h2", null, createdTitle), h("div", { className: "filters" }, h(Filters, { departments: data.departments, filters, setFilters, showDepartment: !isAdmin }), h("button", { className: "primary-button", type: "button", disabled: busy, onClick: () => setShowForm((value) => !value) }, "+ Nouvelle tâche"))),
       showForm && h(TaskForm, { data, currentUser, busy, onCancel: () => setShowForm(false), onCreate: onCreateTask }),
-      h("div", { className: "task-board" }, columns.map((status) => h("section", { key: status, className: "board-column" }, h("h3", null, statusLabel(status)), tasks.filter((task) => task.status === status).map((task) => h(TaskCard, { key: task.id, task })), !tasks.some((task) => task.status === status) && h("p", { className: "muted" }, "Aucune tâche dans cette colonne.")))),
+      h("div", { className: "task-board" }, columns.map((status) => h("section", { key: status, className: "board-column" }, h("h3", null, statusLabel(status)), tasks.filter((task) => task.status === status).map((task) => h(TaskCard, { key: task.id, task, showCreator: isAdmin })), !tasks.some((task) => task.status === status) && h("p", { className: "muted" }, "Aucune tâche dans cette colonne.")))),
     ),
-    h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Toutes les tâches correspondantes"), h(Pill, { color: "blue" }, `${tasks.length} lignes`)), h("div", { className: "task-list" }, tasks.map((task) => h(TaskRow, { key: task.id, task })))),
+    h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, historyTitle), h(Pill, { color: "blue" }, `${tasks.length} tâches`)), h("div", { className: "task-list" }, tasks.map((task) => h(TaskRow, { key: task.id, task, showCreator: isAdmin })), tasks.length === 0 && h("p", { className: "muted" }, isAdmin ? "Aucune tâche ne correspond aux filtres." : "Vous n'avez encore créé aucune tâche correspondant à ces filtres."))),
   );
 }
 
-function TaskCard({ task }) {
-  const typeLabel = task.taskType === "consolidation" ? `${taskTypeLabels.consolidation} / ${consolidationLabels[task.consolidationType] || ""}` : "Tâche normale";
-  return h("div", { className: "task-card" }, h("div", { className: "card-meta" }, h(Pill, { color: "blue" }, task.id), task.priority && h(Pill, { color: priorityClass(task.priority) }, priorityLabel(task.priority))), h("strong", null, task.title), h("span", { className: "muted" }, `${typeLabel} / ${task.departmentName}`), h("span", { className: "muted" }, `Responsable : ${task.responsibleNames || task.assignedEmployeeName}`), h("span", { className: "muted" }, `Vérificateur : ${task.verifierName || task.supervisorName}`));
+function Todo({ tasks, notifications, activeTaskId, setActiveTaskId, onTaskStatus, busy }) {
+  const remainingCount = tasks.filter((task) => !["Waiting for Review", "Completed", "Approved", "Cancelled"].includes(task.status)).length;
+  return h(
+    React.Fragment,
+    null,
+    h(
+      "article",
+      { className: "panel todo-toolbar task-execution-heading" },
+      h("div", { className: "panel-header" }, h("div", null, h("h2", null, "À faire"), h("p", { className: "muted" }, "Consultez et réalisez uniquement les tâches qui vous sont affectées comme responsable.")), h(Pill, { color: "blue" }, `${remainingCount} restantes`)),
+    ),
+    h(Employee, { tasks, notifications, activeTaskId, setActiveTaskId, onTaskStatus, busy }),
+  );
+}
+
+function TaskCard({ task, showCreator = false }) {
+  const isConsolidation = task.taskType === "consolidation";
+  const typeLabel = isConsolidation ? `${taskTypeLabels.consolidation} / ${consolidationLabels[task.consolidationType] || ""}` : "Tâche normale";
+  const typeClass = isConsolidation ? "task-card-consolidation" : "task-card-normal";
+  return h("div", { className: `task-card ${typeClass}`, "data-task-type": task.taskType || "normal" }, h("div", { className: "card-meta" }, h(Pill, { color: isConsolidation ? "green" : "blue" }, task.id), task.priority && h(Pill, { color: priorityClass(task.priority) }, priorityLabel(task.priority))), h("strong", null, task.title), h("span", { className: "muted" }, `${typeLabel} / ${task.departmentName}`), showCreator && h("span", { className: "muted" }, `Créée par : ${task.creatorName || "Non affecté"}`), h("span", { className: "muted" }, `Responsable : ${task.responsibleNames || task.assignedEmployeeName}`), h("span", { className: "muted" }, `Vérificateur : ${task.verifierName || task.supervisorName}`));
 }
 
 function Employee({ tasks, notifications = [], activeTaskId, setActiveTaskId, onTaskStatus, busy }) {
-  const actionableStatuses = ["In Progress", "Ready", "On Hold", "Blocked", "Waiting for Review", "Pending", "Rejected"];
+  const actionableStatuses = ["In Progress", "Ready", "On Hold", "Blocked", "Pending", "Rejected"];
   const selectedTask = tasks.find((task) => task.id === activeTaskId);
   const selectedIsActionable = selectedTask && actionableStatuses.includes(selectedTask.status);
   const current =
@@ -535,13 +679,14 @@ function Employee({ tasks, notifications = [], activeTaskId, setActiveTaskId, on
     selectedTask ||
     tasks[0];
   const activeTasks = tasks.filter((task) => actionableStatuses.includes(task.status));
-  const finishedTasks = tasks.filter((task) => !actionableStatuses.includes(task.status));
+  const waitingTasks = tasks.filter((task) => task.status === "Waiting for Review");
+  const finishedTasks = tasks.filter((task) => ["Completed", "Approved", "Cancelled"].includes(task.status));
 
   useEffect(() => {
     if (current) setActiveTaskId(current.id);
   }, [current?.id]);
 
-  if (!current) return h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Aucune tâche assignée"), h(Pill, { color: "blue" }, "Disponible")), h("p", { className: "muted" }, "Aucune tâche n'est actuellement assignée à ce compte employé."));
+  if (!current) return h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Aucune tâche assignée"), h(Pill, { color: "blue" }, "Disponible")), h("p", { className: "muted" }, "Aucune tâche n'est actuellement assignée à ce compte comme responsable."));
 
   return h(
     "section",
@@ -555,6 +700,18 @@ function Employee({ tasks, notifications = [], activeTaskId, setActiveTaskId, on
         h("div", null, h("p", { className: "eyebrow" }, "Tâche actuelle"), h("h2", null, current.title), h("span", { className: "muted" }, current.description || "Aucune description ajoutée pour cette tâche.")),
         h("div", { className: "work-status" }, h(Pill, { color: statusClass(current.status) }, statusLabel(current.status)), h("small", { className: "muted" }, current.id)),
       ),
+      current.rejectionReason && h(
+        "section",
+        { className: "rejection-cause", "aria-label": "Motif du rejet" },
+        h("span", { className: "rejection-cause-icon", "aria-hidden": true }, h(Icon, { name: "alert-triangle", size: 20 })),
+        h(
+          "div",
+          null,
+          h("strong", null, "Motif du rejet"),
+          h("p", null, current.rejectionReason),
+          h("small", null, [current.rejectedByName || current.verifierName, current.rejectedAt ? new Date(current.rejectedAt).toLocaleString("fr-FR") : ""].filter(Boolean).join(" / ")),
+        ),
+      ),
       h(
         "div",
         { className: "work-details" },
@@ -566,9 +723,9 @@ function Employee({ tasks, notifications = [], activeTaskId, setActiveTaskId, on
       h(
         "div",
         { className: "work-metrics" },
-        h(Metric, { label: "Priorité", value: current.priority ? priorityLabel(current.priority) : "Aucune", detail: "Champ optionnel" }),
-        h(Metric, { label: "Retard KPI", value: `${taskDelayDays(current)} j`, detail: "Indice d'engagement" }),
-        h(Metric, { label: "Échéance", value: dueLabel(current.dueDateLabel), detail: current.estimatedDuration }),
+        h(Metric, { label: "Priorité", value: current.priority ? priorityLabel(current.priority) : "Aucune" }),
+        h(Metric, { label: "Retard KPI", value: `${taskDelayDays(current)} j` }),
+        h(Metric, { label: "Échéance", value: dueLabel(current.dueDateLabel) }),
       ),
       h(
         "div",
@@ -577,15 +734,16 @@ function Employee({ tasks, notifications = [], activeTaskId, setActiveTaskId, on
         h("div", { className: "action-grid" }, employeeButtons(current, onTaskStatus, () => setActiveTaskId(activeTasks[0]?.id || tasks[0]?.id), busy)),
       ),
     ),
-    h("aside", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Mes tâches"), h(Pill, { color: "blue" }, `${activeTasks.length} actives`)), notifications.length > 0 && h("div", { className: "employee-history" }, h("h3", null, "Notifications"), h("div", { className: "activity-list" }, notifications.slice(0, 4).map((item) => h("div", { key: item.id, className: "activity-item" }, h("span", null, item.message), h("span", { className: "muted" }, new Date(item.createdAt).toLocaleDateString("fr-FR")))))), h("div", { className: "task-list" }, activeTasks.map((task) => h(TaskRow, { key: task.id, task, compact: true, selected: task.id === current.id, onOpen: setActiveTaskId })), activeTasks.length === 0 && h("p", { className: "muted" }, "Aucune tâche active pour le moment.")), finishedTasks.length > 0 && h("div", { className: "employee-history" }, h("h3", null, "Terminées"), h("div", { className: "task-list" }, finishedTasks.slice(0, 5).map((task) => h(TaskRow, { key: task.id, task, compact: true, selected: task.id === current.id, onOpen: setActiveTaskId }))))),
+    h("aside", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "À faire"), h(Pill, { color: "blue" }, `${activeTasks.length} actives`)), notifications.length > 0 && h("div", { className: "employee-history" }, h("h3", null, "Notifications"), h("div", { className: "activity-list" }, notifications.slice(0, 4).map((item) => h("div", { key: item.id, className: "activity-item" }, h("span", null, item.message), h("span", { className: "muted" }, new Date(item.createdAt).toLocaleDateString("fr-FR")))))), h("div", { className: "task-list" }, activeTasks.map((task) => h(TaskRow, { key: task.id, task, compact: true, selected: task.id === current.id, onOpen: setActiveTaskId })), activeTasks.length === 0 && h("p", { className: "muted" }, "Aucune tâche active pour le moment.")), waitingTasks.length > 0 && h("div", { className: "employee-history" }, h("h3", null, "Terminées - en attente de vérification"), h("div", { className: "task-list" }, waitingTasks.map((task) => h(TaskRow, { key: task.id, task, compact: true, selected: task.id === current.id, onOpen: setActiveTaskId })))), finishedTasks.length > 0 && h("div", { className: "employee-history" }, h("h3", null, "Historique"), h("div", { className: "task-list" }, finishedTasks.slice(0, 5).map((task) => h(TaskRow, { key: task.id, task, compact: true, selected: task.id === current.id, onOpen: setActiveTaskId }))))),
   );
 }
 
 function employeeActionText(status) {
   if (status === "Ready" || status === "Pending") return "Démarrez la tâche lorsque vous acceptez l'échéance proposée.";
-  if (status === "In Progress") return "Clôturez la tâche réalisée ou demandez un changement de date au créateur.";
+  if (status === "In Progress") return "Marquez la tâche comme terminée lorsque le travail est fini, ou demandez un changement de date au créateur.";
   if (status === "On Hold") return "La tâche est en pause. Reprenez-la lorsque vous pouvez continuer.";
-  if (status === "Blocked" || status === "Rejected") return "Ajoutez une note ou reprenez après correction du problème.";
+  if (status === "Rejected") return "Consultez le motif du rejet, effectuez les corrections demandées, puis redémarrez la tâche.";
+  if (status === "Blocked") return "Ajoutez une note ou reprenez après correction du problème.";
   if (status === "Waiting for Review") return "La tâche attend la vérification du vérificateur désigné. Vous pouvez ajouter une note.";
   return "Consultez l'état de cette tâche et passez à une tâche active si nécessaire.";
 }
@@ -598,10 +756,10 @@ function employeeButtons(task, onTaskStatus, openNextTask, busy) {
   if (task.status === "Cancelled") return h("div", { className: "employee-state-message" }, h("strong", null, "Tâche annulée"), h("span", { className: "muted" }, "Aucune intervention n'est nécessaire sur cette tâche."), h("button", { className: "ghost-button", type: "button", disabled: busy, onClick: openNextTask }, "Voir une tâche active"));
   if (task.status === "Waiting for Review") {
     add("Ajouter une note", "note");
-    buttons.push(h("span", { key: "review-info", className: "employee-state-message muted" }, "Envoyée au vérificateur pour validation."));
+    buttons.push(h("span", { key: "review-info", className: "employee-state-message muted" }, "Envoyée au vérificateur pour vérification."));
   }
   else if (task.status === "In Progress") {
-    add("Clôturer", "complete", true);
+    add("Marquer comme terminée", "complete", true);
     add("Demander une nouvelle date", "dateChange");
     add("Ajouter une note", "note");
   } else if (["Blocked", "On Hold"].includes(task.status)) {
@@ -615,31 +773,92 @@ function employeeButtons(task, onTaskStatus, openNextTask, busy) {
   return buttons;
 }
 
-function Supervisor({ data, tasks, filters, setFilters, currentUser, onReview, onUpdateTask, onDeleteTask, busy }) {
-  const waiting = tasks.filter((task) => task.status === "Waiting for Review");
-  const teamUsers = data.users.filter((user) => roleKey(user.role) === "employee").filter((user) => user.departmentId === currentUser.departmentId);
+function VerificationTaskRow({ task, isAdmin, busy, onReview }) {
+  const [showRejection, setShowRejection] = useState(false);
+  const [reason, setReason] = useState("");
+
+  async function submitRejection(event) {
+    event.preventDefault();
+    const rejectionReason = reason.trim();
+    if (!rejectionReason) return;
+    const saved = await onReview(task, false, rejectionReason);
+    if (saved) {
+      setReason("");
+      setShowRejection(false);
+    }
+  }
+
+  return h(
+    "div",
+    { className: "task-row verification-task-row" },
+    h("div", null, h("strong", null, `${task.id} / ${task.title}`), h("p", { className: "muted" }, `${task.departmentName} / Responsable : ${task.responsibleNames || task.assignedEmployeeName} / Vérificateur : ${task.verifierName || task.supervisorName}`)),
+    h(
+      "div",
+      { className: "card-meta" },
+      isAdmin
+        ? h(Pill, { color: "amber" }, "À traiter par le vérificateur")
+        : h(
+          React.Fragment,
+          null,
+          h("button", { className: "primary-button", type: "button", disabled: busy, onClick: () => onReview(task, true) }, "Valider"),
+          h("button", { className: "ghost-button", type: "button", disabled: busy, onClick: () => setShowRejection(true) }, "Rejeter"),
+        ),
+    ),
+    !isAdmin && showRejection && h(
+      "form",
+      { className: "rejection-form", onSubmit: submitRejection },
+      h(
+        "label",
+        null,
+        h("span", null, "Motif du rejet"),
+        h("textarea", {
+          value: reason,
+          required: true,
+          minLength: 3,
+          maxLength: 2000,
+          autoFocus: true,
+          disabled: busy,
+          placeholder: "Décrivez précisément les corrections attendues...",
+          "aria-label": "Motif du rejet",
+          onChange: (event) => setReason(event.target.value),
+        }),
+      ),
+      h(
+        "div",
+        { className: "form-actions" },
+        h("button", { className: "ghost-button", type: "button", disabled: busy, onClick: () => { setReason(""); setShowRejection(false); } }, "Annuler"),
+        h("button", { className: "primary-button rejection-submit", type: "submit", disabled: busy || reason.trim().length < 3 }, "Confirmer le rejet"),
+      ),
+    ),
+  );
+}
+
+function Supervisor({ data, tasks, commitmentTasks, filters, setFilters, currentUser, onReview, onUpdateTask, onDeleteTask, busy, isAdmin = false }) {
+  const verificationTasks = isAdmin ? tasks : tasks.filter((task) => (task.verifierId || task.supervisorId) === currentUser.id);
+  const waiting = verificationTasks.filter((task) => task.status === "Waiting for Review");
+  const managedTasks = isAdmin ? tasks : tasks.filter((task) => task.createdBy === currentUser.id);
+  const teamUsers = data.users.filter((user) => user.isActive !== false
+    && roleKey(user.role || user.roleKey) === "combined"
+    && (isAdmin ? (!filters.departmentId || user.departmentId === filters.departmentId) : user.departmentId === currentUser.departmentId));
   return h(
     React.Fragment,
     null,
-    h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Filtres supervision"), h(Filters, { departments: data.departments, filters, setFilters }))),
-    h("div", { className: "metrics-grid" }, h(Metric, { label: "Tâches visibles", value: tasks.length, detail: "Département + vérifications" }), h(Metric, { label: "À vérifier par moi", value: waiting.filter((task) => (task.verifierId || task.supervisorId) === currentUser.id).length, detail: "Validation autorisée" }), h(Metric, { label: "Indice d'engagement", value: `${commitmentIndex(tasks, currentUser.id)} j`, detail: "Retard moyen par tâche" }), h(Metric, { label: "Demandes de date", value: tasks.filter((task) => task.dueDateChangeRequest).length, detail: "À traiter par le créateur" })),
+    h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Filtres supervision"), h(Filters, { departments: data.departments, filters, setFilters, showDepartment: !isAdmin }))),
+    h("div", { className: "metrics-grid" }, h(Metric, { label: "Tâches supervisées", value: tasks.length }), h(Metric, { label: isAdmin ? "Vérifications en attente" : "À vérifier par moi", value: waiting.length }), h(Metric, { label: isAdmin ? "Utilisateurs suivis" : "Indice d'engagement", value: isAdmin ? teamUsers.length : `${commitmentIndex(commitmentTasks, currentUser.id)} j` }), h(Metric, { label: "Demandes de date", value: managedTasks.filter((task) => task.dueDateChangeRequest).length })),
     h(
       "div",
-      { className: "grid-2" },
-      h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "En attente de vérification"), h(Pill, { color: "amber" }, "Vérificateur désigné")), h("div", { className: "task-list" }, waiting.map((task) => {
-        const canVerify = (task.verifierId || task.supervisorId) === currentUser.id;
-        return h("div", { key: task.id, className: "task-row" }, h("div", null, h("strong", null, `${task.id} / ${task.title}`), h("p", { className: "muted" }, `${task.departmentName} / Responsable : ${task.responsibleNames || task.assignedEmployeeName} / Vérificateur : ${task.verifierName || task.supervisorName}`)), h("div", { className: "card-meta" }, canVerify ? h("button", { className: "primary-button", type: "button", disabled: busy, onClick: () => onReview(task, true) }, "Valider") : h(Pill, { color: "amber" }, "Lecture seule"), canVerify && h("button", { className: "ghost-button", type: "button", disabled: busy, onClick: () => onReview(task, false) }, "Refuser")));
-      }), waiting.length === 0 && h("p", { className: "muted" }, "Aucune tâche en attente."))),
-      h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Charge des employés"), h(Pill, { color: "green" }, "Équilibrée")), h("div", { className: "report-list" }, teamUsers.map((user) => h("div", { key: user.id, className: "report-row" }, h("span", null, h("strong", null, userFullName(user)), h("br"), h("small", { className: "muted" }, user.departmentName)), h("strong", null, `${user.load}%`))))),
+      { className: isAdmin ? "grid-2" : "supervision-review-list" },
+      h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "En attente de vérification"), h(Pill, { color: "amber" }, isAdmin ? "Suivi global" : "Vérificateur désigné")), h("div", { className: "task-list" }, waiting.map((task) => h(VerificationTaskRow, { key: task.id, task, isAdmin, busy, onReview })), waiting.length === 0 && h("p", { className: "muted" }, "Aucune tâche en attente."))),
+      isAdmin && h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Engagement des utilisateurs"), h(Pill, { color: "green" }, `${teamUsers.length} suivis`)), h("div", { className: "report-list" }, teamUsers.map((user) => h("div", { key: user.id, className: "report-row" }, h("span", null, h("strong", null, userFullName(user)), h("br"), h("small", { className: "muted" }, user.departmentName)), h("strong", null, `${commitmentIndex(commitmentTasks, user.id)} j`))))),
     ),
     h(
       "article",
       { className: "panel" },
-      h("div", { className: "panel-header" }, h("h2", null, "Gestion des tâches du département"), h(Pill, { color: "blue" }, "Manager")),
+      h("div", { className: "panel-header" }, h("h2", null, isAdmin ? "Gestion de toutes les tâches" : "Gestion de mes tâches créées"), h(Pill, { color: "blue" }, "Supervision")),
       h(
         "div",
         { className: "task-list" },
-        tasks.map((task) =>
+        managedTasks.map((task) =>
           h(
             "div",
             { key: task.id, className: "task-row" },
@@ -659,6 +878,7 @@ function Supervisor({ data, tasks, filters, setFilters, currentUser, onReview, o
             ),
           ),
         ),
+        managedTasks.length === 0 && h("p", { className: "muted" }, isAdmin ? "Aucune tâche ne correspond à ces filtres." : "Aucune tâche créée par vous ne correspond à ces filtres."),
       ),
     ),
   );
@@ -668,15 +888,16 @@ function userInitials(user) {
   return `${user?.firstName?.[0] || ""}${user?.lastName?.[0] || ""}`.toUpperCase() || "RB";
 }
 
-function Users({ data, search, onCreateUser, onUpdateUser, busy }) {
+function Users({ data, search, departmentId, currentUser, onCreateUser, onUpdateUser, busy }) {
   const [showForm, setShowForm] = useState(false);
-  const initialForm = { firstName: "", lastName: "", email: "", phone: "", role: "Employé", departmentId: data.departments[0]?.id || "", temporaryPassword: "" };
+  const initialForm = { firstName: "", lastName: "", email: "", phone: "", role: "Vérificateur/Responsable", departmentId: data.departments[0]?.id || "", temporaryPassword: "" };
   const [form, setForm] = useState(initialForm);
   const query = search.toLowerCase();
-  const rows = query ? data.users.filter((user) => `${userFullName(user)} ${user.email} ${user.role} ${user.departmentName}`.toLowerCase().includes(query)) : data.users;
+  const departmentUsers = data.users.filter((user) => !departmentId || user.departmentId === departmentId);
+  const rows = query ? departmentUsers.filter((user) => `${userFullName(user)} ${user.email} ${user.role} ${user.departmentName}`.toLowerCase().includes(query)) : departmentUsers;
   const activeCount = rows.filter((user) => user.isActive).length;
-  const supervisorCount = rows.filter((user) => roleKey(user.role) === "supervisor").length;
-  const employeeCount = rows.length - supervisorCount;
+  const administratorCount = rows.filter((user) => roleKey(user.role || user.roleKey) === "admin").length;
+  const operationalCount = rows.filter((user) => roleKey(user.role || user.roleKey) === "combined").length;
   const isDirty = Boolean(form.firstName || form.lastName || form.email || form.phone || form.temporaryPassword);
   useUnsavedChanges(showForm && isDirty && !busy);
 
@@ -709,13 +930,13 @@ function Users({ data, search, onCreateUser, onUpdateUser, busy }) {
     h(
       "div",
       { className: "user-summary" },
-      h(Metric, { label: "Utilisateurs affichés", value: rows.length, detail: "Selon la recherche" }),
-      h(Metric, { label: "Actifs", value: activeCount, detail: "Comptes disponibles" }),
-      h(Metric, { label: "Vérificateurs", value: supervisorCount, detail: "Création et validation" }),
-      h(Metric, { label: "Responsables", value: employeeCount, detail: "Exécution des tâches" }),
+      h(Metric, { label: "Utilisateurs affichés", value: rows.length }),
+      h(Metric, { label: "Comptes actifs", value: activeCount }),
+      h(Metric, { label: "Vérificateurs/Responsables", value: operationalCount }),
+      h(Metric, { label: "Administrateurs", value: administratorCount }),
     ),
     showForm &&
-      h("form", { className: "task-form", onSubmit: submit, "aria-busy": busy }, inputField("Prénom", "firstName", form.firstName, update, "", true), inputField("Nom", "lastName", form.lastName, update, "", true), inputField("Email", "email", form.email, update, "prenom@richbond.local", true, "", "email"), inputField("Téléphone", "phone", form.phone, update), selectField("Rôle", "role", form.role, update, [["Employé", "Responsable"], ["Superviseur", "Vérificateur"]]), selectField("Département", "departmentId", form.departmentId, update, data.departments.map((dept) => [dept.id, dept.name])), inputField("Mot de passe temporaire", "temporaryPassword", form.temporaryPassword, update, "10 caractères minimum", true, "span-2", "password"), h("p", { className: "password-rules muted span-2" }, "Le nouvel utilisateur devra le remplacer à sa première connexion."), h("div", { className: "form-actions span-2" }, h("button", { className: "primary-button", type: "submit", disabled: busy }, busy ? "Création..." : "Créer l'utilisateur"), h("button", { className: "ghost-button", type: "button", disabled: busy, onClick: closeForm }, "Annuler"))),
+      h("form", { className: "task-form", onSubmit: submit, "aria-busy": busy }, inputField("Prénom", "firstName", form.firstName, update, "", true), inputField("Nom", "lastName", form.lastName, update, "", true), inputField("Email", "email", form.email, update, "prenom@richbond.local", true, "", "email"), inputField("Téléphone", "phone", form.phone, update), selectField("Rôle", "role", form.role, update, [["Vérificateur/Responsable", "Vérificateur/Responsable"], ["Administrateur", "Administrateur"]]), selectField("Département", "departmentId", form.departmentId, update, data.departments.map((dept) => [dept.id, dept.name])), inputField("Mot de passe temporaire", "temporaryPassword", form.temporaryPassword, update, "10 caractères minimum", true, "span-2", "password"), h("p", { className: "password-rules muted span-2" }, "Le nouvel utilisateur devra le remplacer à sa première connexion."), h("div", { className: "form-actions span-2" }, h("button", { className: "primary-button", type: "submit", disabled: busy }, busy ? "Création..." : "Créer l'utilisateur"), h("button", { className: "ghost-button", type: "button", disabled: busy, onClick: closeForm }, "Annuler"))),
     h(
       "div",
       { className: "user-grid" },
@@ -733,12 +954,12 @@ function Users({ data, search, onCreateUser, onUpdateUser, busy }) {
           h(
             "div",
             { className: "user-details" },
-            h("div", null, h("span", null, "Rôle"), h("strong", null, roleKey(user.role) === "supervisor" ? "Vérificateur" : "Responsable")),
+            h("div", null, h("span", null, "Rôle"), h("strong", null, roleLabel(user))),
             h("div", null, h("span", null, "Département"), h("strong", null, user.departmentName || "Non affecté")),
             h("div", null, h("span", null, "Téléphone"), h("strong", null, user.phone || "Non renseigné")),
-            h("div", null, h("span", null, "Charge"), h("strong", null, `${Number(user.load || 0)}%`)),
+            h("div", null, h("span", null, "Indice d'engagement"), h("strong", null, roleKey(user.role || user.roleKey) === "combined" ? `${commitmentIndex(data.tasks, user.id)} j` : "Non applicable")),
           ),
-          h("div", { className: "user-actions" }, h("button", { className: "ghost-button", type: "button", disabled: busy, onClick: () => onUpdateUser(user.id, { isActive: !user.isActive }) }, user.isActive ? "Désactiver" : "Activer")),
+          h("div", { className: "user-actions" }, h("button", { className: "ghost-button", type: "button", disabled: busy || user.id === currentUser.id, title: user.id === currentUser.id ? "Votre propre compte ne peut pas être désactivé" : undefined, onClick: () => onUpdateUser(user.id, { isActive: !user.isActive }) }, user.isActive ? "Désactiver" : "Activer")),
         ),
       ),
       rows.length === 0 && h("p", { className: "muted" }, "Aucun utilisateur ne correspond à la recherche."),
@@ -761,7 +982,7 @@ function Settings({ data, onCreateDepartment, busy }) {
     "div",
     { className: "grid-2" },
     h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Départements"), h(Pill, { color: "blue" }, `${data.departments.length} départements`)), h("form", { className: "department-form", onSubmit: submit, "aria-busy": busy }, inputField("Nom", "name", form.name, update, "Ex. Ressorts", true), inputField("Description", "description", form.description, update, "Description du département"), inputField("Capacité", "capacity", form.capacity, update, "", false, "", "number"), h("button", { className: "primary-button", type: "submit", disabled: busy }, busy ? "Ajout..." : "+ Ajouter")), h("div", { className: "dept-grid" }, data.departments.map((dept) => h("div", { key: dept.id, className: "dept-card" }, h("strong", null, dept.name), h("p", { className: "muted" }, dept.description))))),
-    h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Sécurité"), h(Pill, { color: "green" }, "Contrôles actifs")), h("div", { className: "report-list" }, ["Sessions authentifiées", "Autorisations par rôle", "Protection de la connexion", "Journal d'audit"].map((item) => h("div", { key: item, className: "report-row" }, h("span", null, item), h(Pill, { color: "green" }, "Actif"))))),
+    h("article", { className: "panel" }, h("div", { className: "panel-header" }, h("h2", null, "Sécurité"), h(Pill, { color: "green" }, "Contrôles actifs")), h("div", { className: "report-list" }, ["Sessions authentifiées", "Autorisations du compte", "Protection de la connexion", "Journal d'audit"].map((item) => h("div", { key: item, className: "report-row" }, h("span", null, item), h(Pill, { color: "green" }, "Actif"))))),
   );
 }
 
@@ -823,7 +1044,7 @@ function Reports({ data }) {
   const filteredTasks = filterTasksForReport(data.tasks, reportFilters);
   const reportSummary = summarizeReport(filteredTasks);
   const kpiUsers = data.users
-    .filter((user) => roleKey(user.role) === "employee")
+    .filter((user) => roleKey(user.role || user.roleKey) === "combined")
     .filter((user) => filteredTasks.some((task) => taskResponsibleIds(task).includes(user.id)));
 
   function exportReport() {
@@ -859,7 +1080,7 @@ function Reports({ data }) {
         h("label", null, h("span", null, "Type de rapport"), h("select", { value: reportFilters.reportType, onChange: (e) => update("reportType", e.target.value) }, h("option", { value: "tasks" }, "Tâches de production"))),
       ),
     ),
-    h("div", { className: "metrics-grid" }, h(Metric, { label: "Tâches exportées", value: reportSummary.total, detail: "Selon les filtres" }), h(Metric, { label: "Terminées", value: reportSummary.completed, detail: "Approuvées ou terminées" }), h(Metric, { label: "En validation", value: reportSummary.review, detail: "Attente du vérificateur" }), h(Metric, { label: "Bloquées", value: reportSummary.blocked, detail: "Action nécessaire" })),
+    h("div", { className: "metrics-grid" }, h(Metric, { label: "Tâches exportées", value: reportSummary.total }), h(Metric, { label: "Terminées", value: reportSummary.completed }), h(Metric, { label: "En vérification", value: reportSummary.review }), h(Metric, { label: "Bloquées", value: reportSummary.blocked })),
     h(
       "article",
       { className: "panel" },
@@ -879,10 +1100,10 @@ export function App() {
   const [session, setSession] = useState(() => loadSession());
   const currentUser = session?.user || null;
   const [data, setData] = useState(emptyData);
-  const [view, setView] = useState(() => currentUser && roleKey(currentUser.role || currentUser.roleKey) === "employee" ? "employee" : "dashboard");
+  const [view, setView] = useState("dashboard");
   const [theme, setTheme] = useState(() => localStorage.getItem("richbond-theme") || "dark");
-  const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({ departmentId: "", status: "" });
+  const [search, setSearch] = useState("");
   const [activeTaskId, setActiveTaskId] = useState("");
   const [loading, setLoading] = useState(Boolean(currentUser && !currentUser.requiresPasswordChange));
   const [online, setOnline] = useState(() => navigator.onLine !== false);
@@ -930,8 +1151,8 @@ export function App() {
     setSession(null);
     setData(emptyData);
     setView("dashboard");
-    setSearch("");
     setFilters({ departmentId: "", status: "" });
+    setSearch("");
     setErrorMessage("");
     setNotice("");
     setLoginMessage(message);
@@ -969,14 +1190,18 @@ export function App() {
   }
 
   async function login(email, password) {
-    const result = await apiClient.request("/api/login", { method: "POST", body: JSON.stringify({ email, password }) });
+    const result = await apiClient.request("/api/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+      timeoutMs: 30000,
+    });
     const normalizedUser = { ...result.user, roleKey: roleKey(result.user.role || result.user.roleKey) };
     const nextSession = { token: result.token, expiresAt: result.expiresAt, user: normalizedUser };
     saveSession(nextSession);
     setSession(nextSession);
     setLoginMessage("");
     setErrorMessage("");
-    setView(roleKey(normalizedUser.role) === "employee" ? "employee" : "dashboard");
+    setView("dashboard");
   }
 
   async function changePassword(currentPassword, newPassword) {
@@ -1025,28 +1250,52 @@ export function App() {
     }
   }
 
-  const scopedTasks = useMemo(() => {
+  const relatedTasks = useMemo(() => {
     if (!currentUser) return [];
-    return data.tasks
-      .filter((task) => !filters.departmentId || task.departmentId === filters.departmentId)
+    if (currentRole === "admin") return data.tasks;
+    return data.tasks.filter((task) => isTaskRelatedToUser(task, currentUser.id));
+  }, [data.tasks, currentUser?.id, currentRole]);
+
+  const departmentTasks = useMemo(() => {
+    return relatedTasks.filter((task) => !filters.departmentId || task.departmentId === filters.departmentId);
+  }, [relatedTasks, filters.departmentId]);
+
+  const scopedTasks = useMemo(() => {
+    const query = currentRole === "admin" ? search.trim().toLowerCase() : "";
+    return departmentTasks
       .filter((task) => !filters.status || task.status === filters.status)
-      .filter((task) => !search || Object.values(task).join(" ").toLowerCase().includes(search.toLowerCase()));
-  }, [data.tasks, currentUser, filters, search]);
+      .filter((task) => !query || [
+        task.id,
+        task.title,
+        task.description,
+        task.departmentName,
+        task.creatorName,
+        task.responsibleNames,
+        task.verifierName,
+        statusLabel(task.status),
+        priorityLabel(task.priority),
+      ].join(" ").toLowerCase().includes(query));
+  }, [departmentTasks, filters.status, search, currentRole]);
+
+  const createdTasks = currentRole === "admin" ? scopedTasks : scopedTasks.filter((task) => task.createdBy === currentUser?.id);
+  const assignedTasks = currentRole === "combined" ? scopedTasks.filter((task) => taskResponsibleIds(task).includes(currentUser?.id)) : [];
+  const supervisionTasks = currentRole === "admin" ? scopedTasks : scopedTasks.filter((task) => task.createdBy === currentUser?.id || (task.verifierId || task.supervisorId) === currentUser?.id);
+  const engagementTasks = currentRole === "admin" ? departmentTasks : relatedTasks;
 
   async function createTask(payload) {
     return runMutation("Création de la tâche", "La tâche a été créée et affectée.", () => request("/api/tasks", { method: "POST", body: JSON.stringify(payload) }));
   }
 
+  async function createDepartment(payload) {
+    return runMutation("Création du département", "Le département a été ajouté.", () => request("/api/departments", { method: "POST", body: JSON.stringify(payload) }));
+  }
+
   async function createUser(payload) {
-    return runMutation("Création de l'utilisateur", "L'utilisateur a été créé.", () => request("/api/users", { method: "POST", body: JSON.stringify(payload) }));
+    return runMutation("Création de l'utilisateur", "Le compte utilisateur a été créé.", () => request("/api/users", { method: "POST", body: JSON.stringify(payload) }));
   }
 
   async function updateUser(id, patch) {
     return runMutation("Mise à jour de l'utilisateur", "Le compte utilisateur a été mis à jour.", () => request(`/api/users/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }));
-  }
-
-  async function createDepartment(payload) {
-    return runMutation("Création du département", "Le département a été ajouté.", () => request("/api/departments", { method: "POST", body: JSON.stringify(payload) }));
   }
 
   async function updateTaskById(id, patch) {
@@ -1075,14 +1324,19 @@ export function App() {
       payload = { status: statusByAction[action], note };
     }
     setActiveTaskId(task.id);
-    return runMutation("Mise à jour de la tâche", "L'action a été enregistrée.", () => request(`/api/tasks/${encodeURIComponent(task.id)}`, { method: "PATCH", body: JSON.stringify(payload) }));
+    const actionLabel = action === "complete" ? "Finalisation de la tâche" : "Mise à jour de la tâche";
+    const successMessage = action === "complete"
+      ? "La tâche est marquée comme terminée et envoyée au vérificateur."
+      : "L'action a été enregistrée.";
+    return runMutation(actionLabel, successMessage, () => request(`/api/tasks/${encodeURIComponent(task.id)}`, { method: "PATCH", body: JSON.stringify(payload) }));
   }
 
-  async function reviewTask(task, approved) {
-    const note = approved ? "Travail validé par le vérificateur." : prompt("Motif du refus (optionnel) :") || "Tâche refusée par le vérificateur.";
-    return runMutation(approved ? "Validation de la tâche" : "Refus de la tâche", approved ? "La tâche a été validée." : "La tâche a été renvoyée au responsable.", () => request(`/api/tasks/${encodeURIComponent(task.id)}`, {
+  async function reviewTask(task, approved, rejectionReason = "") {
+    const note = approved ? "Travail validé par le vérificateur." : rejectionReason.trim();
+    if (!approved && !note) return false;
+    return runMutation(approved ? "Validation de la tâche" : "Rejet de la tâche", approved ? "La tâche a été validée." : "La tâche a été rejetée et renvoyée au responsable.", () => request(`/api/tasks/${encodeURIComponent(task.id)}`, {
       method: "PATCH",
-      body: JSON.stringify({ status: approved ? "Completed" : "In Progress", note }),
+      body: JSON.stringify({ status: approved ? "Completed" : "Rejected", note }),
     }));
   }
 
@@ -1090,16 +1344,24 @@ export function App() {
   if (currentUser.requiresPasswordChange) return h(PasswordChange, { user: currentUser, onChangePassword: changePassword, onLogout: logout });
 
   const allowedNav = navItems.filter((item) => item.roles.includes(currentRole));
+  const isAdmin = currentRole === "admin";
+  const showAdminScope = isAdmin && ["dashboard", "tasks", "supervisor", "users"].includes(view);
 
   const pageTitle = navItems.find((item) => item.id === view)?.label || "Tableau de bord";
+  const monitoredUsers = data.users.filter((user) => user.isActive !== false
+    && roleKey(user.role || user.roleKey) === "combined"
+    && (!filters.departmentId || user.departmentId === filters.departmentId));
+  const pendingVerifications = isAdmin
+    ? departmentTasks.filter((task) => task.status === "Waiting for Review").length
+    : relatedTasks.filter((task) => task.status === "Waiting for Review" && (task.verifierId || task.supervisorId) === currentUser.id).length;
 
   let content;
-  if (view === "dashboard") content = h(Dashboard, { data, tasks: scopedTasks, setView, currentUser });
-  if (view === "tasks") content = h(Tasks, { data, tasks: scopedTasks, filters, setFilters, currentUser, onCreateTask: createTask, busy });
-  if (view === "employee") content = h(Employee, { tasks: scopedTasks, notifications: data.notifications || [], activeTaskId, setActiveTaskId, onTaskStatus: updateTask, busy });
-  if (view === "supervisor") content = h(Supervisor, { data, tasks: scopedTasks, filters, setFilters, currentUser, onReview: reviewTask, onUpdateTask: updateTaskById, onDeleteTask: deleteTask, busy });
-  if (view === "reports") content = h(Reports, { data: { ...data, tasks: scopedTasks } });
-  if (view === "users") content = h(Users, { data, search, onCreateUser: createUser, onUpdateUser: updateUser, busy });
+  if (view === "dashboard") content = h(Dashboard, { data, tasks: scopedTasks, commitmentTasks: engagementTasks, currentUser, isAdmin, departmentId: filters.departmentId });
+  if (view === "tasks") content = h(Tasks, { data, tasks: createdTasks, filters, setFilters, currentUser, onCreateTask: createTask, busy, isAdmin });
+  if (view === "todo") content = h(Todo, { tasks: assignedTasks, notifications: data.notifications || [], activeTaskId, setActiveTaskId, onTaskStatus: updateTask, busy });
+  if (view === "supervisor") content = h(Supervisor, { data, tasks: supervisionTasks, commitmentTasks: engagementTasks, filters, setFilters, currentUser, onReview: reviewTask, onUpdateTask: updateTaskById, onDeleteTask: deleteTask, busy, isAdmin });
+  if (view === "users") content = h(Users, { data, search, departmentId: filters.departmentId, currentUser, onCreateUser: createUser, onUpdateUser: updateUser, busy });
+  if (view === "reports") content = h(Reports, { data });
   if (view === "settings") content = h(Settings, { data, onCreateDepartment: createDepartment, busy });
 
   return h(
@@ -1109,6 +1371,13 @@ export function App() {
       "aside",
       { className: "sidebar", "aria-label": "Navigation principale" },
       h(Brand),
+      h(WorkspaceTools, {
+        className: "mobile-account-tools",
+        currentUser,
+        theme,
+        onThemeToggle: () => setTheme((value) => (value === "dark" ? "light" : "dark")),
+        onLogout: logout,
+      }),
       h("div", { className: "nav-caption" }, "ESPACE DE TRAVAIL"),
       h("nav", { className: "nav-list" }, allowedNav.map((item) => h("button", { key: item.id, className: `nav-button ${view === item.id ? "active" : ""}`, type: "button", onClick: () => setView(item.id) }, h("span", { className: "nav-icon" }, h(Icon, { name: item.icon })), h("strong", null, item.label), h(Icon, { name: "chevron-right", size: 16 })))),
       h("div", { className: "factory-pulse" }, h("span", { className: "pulse-dot" }), h("div", null, h("strong", null, "Production connectée"), h("span", null, "Synchronisation en temps réel"))),
@@ -1119,25 +1388,31 @@ export function App() {
       h(
         "header",
         { className: "topbar" },
-        h("div", { className: "page-heading" }, h("p", { className: "eyebrow" }, currentRole === "supervisor" ? "Centre de pilotage" : "Espace responsable"), h("h1", null, pageTitle)),
-        h(
-          "div",
-          { className: "topbar-actions" },
-          h("label", { className: "search" }, h(Icon, { name: "search", size: 19 }), h("input", { type: "search", value: search, placeholder: "Rechercher une tâche, un lot, une personne...", onChange: (e) => { setSearch(e.target.value); if (e.target.value && !["tasks", "supervisor", "employee", "users"].includes(view)) setView(currentRole === "employee" ? "employee" : "tasks"); } })),
-          h("div", { className: "user-chip" }, h("span", { className: "user-chip-avatar" }, userInitials(currentUser)), h("span", { className: "user-chip-copy" }, h("strong", null, userFullName(currentUser)), h("small", null, currentRole === "supervisor" ? "Vérificateur" : "Responsable"))),
-          h("button", { className: "icon-button theme-button", type: "button", title: "Changer le thème", "aria-label": "Changer le thème", onClick: () => setTheme((value) => (value === "dark" ? "light" : "dark")) }, h(Icon, { name: theme === "dark" ? "sun" : "moon" })),
-          h("button", { className: "icon-button logout-button", type: "button", title: "Se déconnecter", "aria-label": "Se déconnecter", onClick: logout }, h(Icon, { name: "log-out" })),
-        ),
+        h("div", { className: "page-heading" }, h("p", { className: "eyebrow" }, `Espace ${roleLabel(currentUser)}`), h("h1", null, pageTitle)),
+        h(WorkspaceTools, {
+          className: "desktop-account-tools",
+          currentUser,
+          theme,
+          onThemeToggle: () => setTheme((value) => (value === "dark" ? "light" : "dark")),
+          onLogout: logout,
+        }),
       ),
       !online && h(StatusBanner, { kind: "offline", message: "Vous êtes hors connexion. Les données affichées peuvent être anciennes." }),
       errorMessage && h(StatusBanner, { kind: "error", message: errorMessage, onRetry: () => refresh({ showLoading: true }).catch(() => undefined), onClose: () => setErrorMessage("") }),
       notice && h(StatusBanner, { kind: "success", message: notice, onClose: () => setNotice("") }),
       pendingAction && h(StatusBanner, { kind: "info", message: `${pendingAction} en cours...` }),
+      showAdminScope && h(AdminScopeBar, {
+        departments: data.departments,
+        search,
+        setSearch,
+        departmentId: filters.departmentId,
+        setDepartmentId: (departmentId) => setFilters((current) => ({ ...current, departmentId })),
+      }),
       h(
         "section",
         { className: "hero-status", "aria-label": "État de l'usine" },
-        h("div", { className: "hero-copy" }, h("span", { className: "live-label" }, h("span", { className: "pulse-dot" }), "ACTIVITÉ EN DIRECT"), h("strong", null, "La production reste stable"), h("p", null, "Les indicateurs clés et les validations sont synchronisés.")),
-        h("div", { className: "hero-metrics" }, h("span", null, h("small", null, "Efficacité"), h("b", null, `${data.kpis?.efficiency || 91}%`)), h("span", null, h("small", null, "Départements"), h("b", null, data.departments.length || 0)), h("span", null, h("small", null, "À valider"), h("b", null, data.tasks.filter((task) => task.status === "Waiting for Review").length))),
+        h("div", { className: "hero-copy" }, h("span", { className: "live-label" }, h("span", { className: "pulse-dot" }), "ACTIVITÉ EN DIRECT"), h("strong", null, "La production reste stable"), h("p", null, "Les indicateurs clés et les vérifications sont synchronisés.")),
+        h("div", { className: "hero-metrics" }, h("span", null, h("small", null, isAdmin ? "Utilisateurs suivis" : "Mon indice d'engagement"), h("b", null, isAdmin ? monitoredUsers.length : `${commitmentIndex(relatedTasks, currentUser.id)} j`)), h("span", null, h("small", null, "Départements"), h("b", null, filters.departmentId ? 1 : data.departments.length || 0)), h("span", null, h("small", null, "À vérifier"), h("b", null, pendingVerifications))),
       ),
       h("section", { className: "view" }, loading ? h(LoadingState) : content),
     ),

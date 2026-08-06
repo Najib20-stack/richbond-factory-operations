@@ -26,6 +26,7 @@ const seed = {
     { id: "d2", name: "Qualité", description: "Contrôle qualité", capacity: 40 },
   ],
   users: [
+    { id: "a1", firstName: "Amine", lastName: "Admin", email: "admin@test.local", passwordHash: secureHash, mustChangePassword: false, role: "Administrateur", departmentId: "d1", isActive: true, load: 0 },
     { id: "s1", firstName: "Nadia", lastName: "Karimi", email: "nadia@test.local", passwordHash: secureHash, mustChangePassword: false, role: "Superviseur", departmentId: "d1", isActive: true, load: 30 },
     { id: "s2", firstName: "Samira", lastName: "Idrissi", email: "samira@test.local", passwordHash: secureHash, mustChangePassword: false, role: "Superviseur", departmentId: "d1", isActive: true, load: 25 },
     { id: "e1", firstName: "Youssef", lastName: "Amrani", email: "youssef@test.local", passwordHash: secureHash, mustChangePassword: false, role: "Employé", departmentId: "d1", isActive: true, load: 45 },
@@ -76,11 +77,13 @@ test.after(async () => {
 });
 
 test("API sécurisée et workflow complet des tâches", async (context) => {
+  let administrator;
   let supervisor;
   let secondSupervisor;
   let employee;
   let otherEmployee;
   let task;
+  let unrelatedTask;
 
   await context.test("expose uniquement le contrôle de santé sans authentification", async () => {
     const health = await api("/api/health");
@@ -144,7 +147,9 @@ test("API sécurisée et workflow complet des tâches", async (context) => {
 
     const accessible = await api("/api/bootstrap", { token: temporary.token });
     assert.equal(accessible.response.status, 200);
-    assert.deepEqual(accessible.payload.users.map((user) => user.id), ["e2"]);
+    assert.deepEqual(accessible.payload.users.map((user) => user.id), ["s1", "s2", "e1", "e2"]);
+    assert.ok(accessible.payload.users.every((user) => user.role === "Vérificateur/Responsable"));
+    assert.deepEqual(accessible.payload.reports, []);
 
     const logout = await api("/api/logout", { method: "POST", token: temporary.token });
     assert.equal(logout.response.status, 200);
@@ -156,25 +161,40 @@ test("API sécurisée et workflow complet des tâches", async (context) => {
     otherEmployee = await login("imane@test.local", "NewSecure2Pass");
   });
 
-  await context.test("sépare les données et les permissions des rôles", async () => {
+  await context.test("unifie les anciens rôles dans un même espace sécurisé", async () => {
+    administrator = await login("admin@test.local");
     supervisor = await login("nadia@test.local");
     secondSupervisor = await login("samira@test.local");
     employee = await login("youssef@test.local");
 
     const employeeBootstrap = await api("/api/bootstrap", { token: employee.token });
     assert.equal(employeeBootstrap.response.status, 200);
-    assert.deepEqual(employeeBootstrap.payload.users.map((user) => user.id), ["e1"]);
-    assert.deepEqual(employeeBootstrap.payload.activities, []);
+    assert.deepEqual(employeeBootstrap.payload.users.map((user) => user.id), ["s1", "s2", "e1", "e2"]);
     assert.deepEqual(employeeBootstrap.payload.reports, []);
+    assert.ok(employeeBootstrap.payload.users.every((user) => user.roleKey === "combined"));
     assert.equal(JSON.stringify(employeeBootstrap.payload).includes("passwordHash"), false);
     assert.equal(JSON.stringify(employeeBootstrap.payload).includes("tokenHash"), false);
 
-    const forbiddenTask = await api("/api/tasks", { method: "POST", token: employee.token, body: {} });
-    assert.equal(forbiddenTask.response.status, 403);
-    const forbiddenUsers = await api("/api/users", { token: employee.token });
-    assert.equal(forbiddenUsers.response.status, 403);
-    const forbiddenDepartment = await api("/api/departments", { method: "POST", token: employee.token, body: { name: "Secret" } });
-    assert.equal(forbiddenDepartment.response.status, 403);
+    const hiddenUsers = await api("/api/users", { token: employee.token });
+    assert.equal(hiddenUsers.response.status, 403);
+    assert.equal(hiddenUsers.payload.code, "FORBIDDEN");
+    const forbiddenUserCreation = await api("/api/users", {
+      method: "POST",
+      token: employee.token,
+      body: { firstName: "Ali" },
+    });
+    assert.equal(forbiddenUserCreation.response.status, 403);
+    assert.equal(forbiddenUserCreation.payload.code, "FORBIDDEN");
+
+    const administratorBootstrap = await api("/api/bootstrap", { token: administrator.token });
+    assert.equal(administratorBootstrap.response.status, 200);
+    assert.deepEqual(administratorBootstrap.payload.users.map((user) => user.id), ["a1", "s1", "s2", "e1", "e2"]);
+    assert.equal(administratorBootstrap.payload.users.find((user) => user.id === "a1").roleKey, "admin");
+    assert.deepEqual(administratorBootstrap.payload.reports.map((report) => report.id), ["r1"]);
+
+    const visibleUsers = await api("/api/users", { token: administrator.token });
+    assert.equal(visibleUsers.response.status, 200);
+    assert.equal(visibleUsers.payload.length, 5);
   });
 
   await context.test("valide les entrées et rend la création de tâche idempotente", async () => {
@@ -193,24 +213,44 @@ test("API sécurisée et workflow complet des tâches", async (context) => {
       departmentId: "d1",
       responsibleIds: ["e1"],
       verifierId: "s1",
-      priority: "High",
-      estimatedDuration: "2h",
       dueDateLabel: "2026-08-10",
       clientRequestId: "request-001",
     };
-    const created = await api("/api/tasks", { method: "POST", token: supervisor.token, body: payload });
+    const created = await api("/api/tasks", { method: "POST", token: employee.token, body: payload });
     assert.equal(created.response.status, 201, JSON.stringify(created.payload));
     assert.equal(created.payload.status, "Ready");
+    assert.equal(created.payload.priority, "");
     task = created.payload;
 
-    const replay = await api("/api/tasks", { method: "POST", token: supervisor.token, body: payload });
+    const replay = await api("/api/tasks", { method: "POST", token: employee.token, body: payload });
     assert.equal(replay.response.status, 200);
     assert.equal(replay.payload.id, task.id);
 
+    const unrelated = await api("/api/tasks", {
+      method: "POST",
+      token: supervisor.token,
+      body: {
+        ...payload,
+        title: "Tâche du même département sans lien",
+        responsibleIds: ["s2"],
+        verifierId: "s1",
+        clientRequestId: "request-unrelated",
+      },
+    });
+    assert.equal(unrelated.response.status, 201, JSON.stringify(unrelated.payload));
+    unrelatedTask = unrelated.payload;
+
     const listed = await api("/api/tasks", { token: employee.token });
     assert.deepEqual(listed.payload.map((item) => item.id), [task.id]);
+    const secondSupervisorTasks = await api("/api/tasks", { token: secondSupervisor.token });
+    assert.equal(secondSupervisorTasks.payload.some((item) => item.id === task.id), false);
+    assert.equal(secondSupervisorTasks.payload.some((item) => item.id === unrelatedTask.id), true);
     const hidden = await api("/api/tasks", { token: otherEmployee.token });
     assert.equal(hidden.payload.some((item) => item.id === task.id), false);
+
+    const administratorTasks = await api("/api/tasks", { token: administrator.token });
+    assert.equal(administratorTasks.payload.some((item) => item.id === task.id), true);
+    assert.equal(administratorTasks.payload.some((item) => item.id === unrelatedTask.id), true);
   });
 
   await context.test("applique les transitions et réserve la validation au vérificateur désigné", async () => {
@@ -220,6 +260,21 @@ test("API sécurisée et workflow complet des tâches", async (context) => {
       body: { status: "In Progress" },
     });
     assert.equal(crossUser.response.status, 403);
+
+    const verifierManagement = await api(`/api/tasks/${task.id}`, {
+      method: "PATCH",
+      token: supervisor.token,
+      body: { title: "Modification interdite" },
+    });
+    assert.equal(verifierManagement.response.status, 403);
+
+    const administratorManagement = await api(`/api/tasks/${task.id}`, {
+      method: "PATCH",
+      token: administrator.token,
+      body: { title: "Contrôler le lot pilote - suivi administrateur" },
+    });
+    assert.equal(administratorManagement.response.status, 200);
+    assert.equal(administratorManagement.payload.title, "Contrôler le lot pilote - suivi administrateur");
 
     const skipped = await api(`/api/tasks/${task.id}`, {
       method: "PATCH",
@@ -260,6 +315,53 @@ test("API sécurisée et workflow complet des tâches", async (context) => {
     });
     assert.equal(wrongVerifier.response.status, 403);
 
+    const administratorCannotApprove = await api(`/api/tasks/${task.id}`, {
+      method: "PATCH",
+      token: administrator.token,
+      body: { status: "Completed", note: "Tentative administrateur." },
+    });
+    assert.equal(administratorCannotApprove.response.status, 403);
+
+    const rejectionWithoutReason = await api(`/api/tasks/${task.id}`, {
+      method: "PATCH",
+      token: supervisor.token,
+      body: { status: "Rejected", note: "" },
+    });
+    assert.equal(rejectionWithoutReason.response.status, 400);
+    assert.equal(rejectionWithoutReason.payload.code, "VALIDATION_ERROR");
+
+    const rejectionReason = "La couture latérale doit être reprise avant une nouvelle vérification.";
+    const rejected = await api(`/api/tasks/${task.id}`, {
+      method: "PATCH",
+      token: supervisor.token,
+      body: { status: "Rejected", note: rejectionReason },
+    });
+    assert.equal(rejected.response.status, 200);
+    assert.equal(rejected.payload.status, "Rejected");
+    assert.equal(rejected.payload.rejectionReason, rejectionReason);
+    assert.equal(rejected.payload.rejectedBy, supervisor.user.id);
+    assert.equal(rejected.payload.rejectedByName, `${supervisor.user.firstName} ${supervisor.user.lastName}`);
+    assert.ok(rejected.payload.rejectedAt);
+    assert.equal(rejected.payload.refusalCount, 1);
+
+    const responsibleView = await api("/api/tasks", { token: employee.token });
+    const visibleRejection = responsibleView.payload.find((item) => item.id === task.id);
+    assert.equal(visibleRejection.rejectionReason, rejectionReason);
+
+    const restarted = await api(`/api/tasks/${task.id}`, {
+      method: "PATCH",
+      token: employee.token,
+      body: { status: "In Progress", note: "Correction démarrée." },
+    });
+    assert.equal(restarted.response.status, 200);
+
+    const resubmitted = await api(`/api/tasks/${task.id}`, {
+      method: "PATCH",
+      token: employee.token,
+      body: { status: "Waiting for Review", note: "Couture corrigée." },
+    });
+    assert.equal(resubmitted.response.status, 200);
+
     const approved = await api(`/api/tasks/${task.id}`, {
       method: "PATCH",
       token: supervisor.token,
@@ -269,23 +371,46 @@ test("API sécurisée et workflow complet des tâches", async (context) => {
     assert.ok(approved.payload.approvedAt);
   });
 
-  await context.test("protège la gestion des utilisateurs et journalise les actions", async () => {
-    const weakUser = await api("/api/users", {
+  await context.test("réserve la gestion des comptes à l'administrateur et journalise les actions métier", async () => {
+    const forbiddenCreateUser = await api("/api/users", {
       method: "POST",
       token: supervisor.token,
-      body: { firstName: "Ali", lastName: "Test", email: "ali@test.local", role: "Employé", departmentId: "d1", temporaryPassword: "faible" },
+      body: { firstName: "Ali", lastName: "Test", email: "ali@test.local" },
     });
-    assert.equal(weakUser.response.status, 400);
-    assert.equal(weakUser.payload.code, "WEAK_PASSWORD");
+    assert.equal(forbiddenCreateUser.response.status, 403);
+    assert.equal(forbiddenCreateUser.payload.code, "FORBIDDEN");
 
     const createdUser = await api("/api/users", {
       method: "POST",
-      token: supervisor.token,
-      body: { firstName: "Ali", lastName: "Test", email: "ali@test.local", role: "Employé", departmentId: "d1", temporaryPassword: "Temporary3Pass" },
+      token: administrator.token,
+      body: {
+        firstName: "Ali",
+        lastName: "Test",
+        email: "ali@test.local",
+        role: "Vérificateur/Responsable",
+        departmentId: "d2",
+        temporaryPassword: "Temporary3Pass",
+      },
     });
-    assert.equal(createdUser.response.status, 201);
+    assert.equal(createdUser.response.status, 201, JSON.stringify(createdUser.payload));
+    assert.equal(createdUser.payload.role, "Vérificateur/Responsable");
     assert.equal(createdUser.payload.requiresPasswordChange, true);
-    assert.equal(Object.hasOwn(createdUser.payload, "passwordHash"), false);
+
+    const updateUser = await api(`/api/users/${createdUser.payload.id}`, {
+      method: "PATCH",
+      token: administrator.token,
+      body: { isActive: false },
+    });
+    assert.equal(updateUser.response.status, 200);
+    assert.equal(updateUser.payload.isActive, false);
+
+    const selfDeactivation = await api("/api/users/a1", {
+      method: "PATCH",
+      token: administrator.token,
+      body: { isActive: false },
+    });
+    assert.equal(selfDeactivation.response.status, 400);
+    assert.equal(selfDeactivation.payload.code, "SELF_DEACTIVATION");
 
     const duplicateDepartment = await api("/api/departments", {
       method: "POST",
@@ -296,9 +421,13 @@ test("API sécurisée et workflow complet des tâches", async (context) => {
 
     const stored = JSON.parse(await readFile(path.join(databaseDir, "richbond-db.json"), "utf8"));
     assert.ok(stored.users.every((user) => user.passwordHash.startsWith("scrypt$")));
+    assert.ok(stored.users.every((user) => ["Vérificateur/Responsable", "Administrateur"].includes(user.role)));
+    assert.ok(stored.users.some((user) => user.role === "Administrateur"));
     assert.ok(stored.sessions.every((session) => session.tokenHash && !Object.hasOwn(session, "token")));
     assert.ok(stored.auditLog.some((entry) => entry.action === "task.created"));
     assert.ok(stored.auditLog.some((entry) => entry.action === "task.updated"));
+    assert.ok(stored.auditLog.some((entry) => entry.action === "user.created"));
+    assert.ok(stored.auditLog.some((entry) => entry.action === "user.updated"));
     assert.ok(stored.auditLog.some((entry) => entry.action === "auth.password_changed"));
   });
 });

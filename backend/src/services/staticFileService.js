@@ -15,6 +15,32 @@ const contentTypes = {
   ".webp": "image/webp",
 };
 
+export function staticCacheControl(filePath) {
+  const extension = path.extname(filePath).toLowerCase();
+
+  // The HTML shell points to hashed bundles and must always be revalidated so
+  // installed mobile browsers cannot keep an obsolete interface indefinitely.
+  if (extension === ".html") return "no-store";
+
+  const relativePath = path.relative(FRONTEND_DIR, filePath);
+  const isBundledAsset = relativePath.split(path.sep)[0] === "assets";
+  const hasContentHash = /-[a-zA-Z0-9_-]{6,}\.[a-zA-Z0-9]+$/.test(path.basename(filePath));
+
+  if (isBundledAsset && hasContentHash) {
+    return "public, max-age=31536000, immutable";
+  }
+
+  return "no-cache";
+}
+
+function staticHeaders(filePath) {
+  const extension = path.extname(filePath).toLowerCase();
+  return {
+    "Cache-Control": staticCacheControl(filePath),
+    "Content-Type": contentTypes[extension] || "application/octet-stream",
+  };
+}
+
 function resolvePublicFile(pathname) {
   const relativePath = decodeURIComponent(pathname).replace(/^\/+/, "") || "index.html";
   const absolutePath = path.resolve(FRONTEND_DIR, relativePath);
@@ -37,15 +63,15 @@ export async function serveStatic(response, pathname) {
 
   try {
     const content = await readFile(requestedFile);
-    const extension = path.extname(requestedFile);
-    response.writeHead(200, { "Content-Type": contentTypes[extension] || "application/octet-stream" });
+    response.writeHead(200, staticHeaders(requestedFile));
     response.end(content);
   } catch (error) {
     if (error.code !== "ENOENT" && error.code !== "EISDIR") throw error;
 
     try {
-      const fallback = await readFile(path.join(FRONTEND_DIR, "index.html"));
-      response.writeHead(200, { "Content-Type": contentTypes[".html"] });
+      const fallbackFile = path.join(FRONTEND_DIR, "index.html");
+      const fallback = await readFile(fallbackFile);
+      response.writeHead(200, staticHeaders(fallbackFile));
       response.end(fallback);
     } catch {
       sendText(response, 503, "Interface non compilée. Exécutez npm run build.");

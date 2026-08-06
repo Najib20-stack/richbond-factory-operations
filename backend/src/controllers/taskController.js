@@ -3,7 +3,7 @@ import { createTask } from "../models/taskModel.js";
 import { addAuditEntry } from "../utils/audit.js";
 import { enrich } from "../utils/enrich.js";
 import { HttpError, readRequestBody, sendJson } from "../utils/http.js";
-import { isEmployee, isSupervisor } from "../utils/roles.js";
+import { canManageOperations, isCombinedUser } from "../utils/roles.js";
 import { statusLabel } from "../utils/status.js";
 import { canManageTask, canReviewTask, canViewTask, taskResponsibleIds } from "../utils/taskAccess.js";
 import { enumValue, numberValue, rejectUnknownFields, stringArray, text } from "../utils/validation.js";
@@ -68,8 +68,8 @@ function assertDueDate(value) {
 
 function validateResponsibleUsers(data, responsibleIds) {
   const users = responsibleIds.map((id) => data.users.find((user) => user.id === id));
-  if (users.some((user) => !user || user.isActive === false || !isEmployee(user))) {
-    throw new HttpError(400, "Chaque responsable doit être un employé actif.", "INVALID_RESPONSIBLE");
+  if (users.some((user) => !user || user.isActive === false || !isCombinedUser(user))) {
+    throw new HttpError(400, "Chaque responsable doit disposer d'un compte actif.", "INVALID_RESPONSIBLE");
   }
   return users;
 }
@@ -122,7 +122,7 @@ export async function createTaskRecord(request, response) {
 
   const result = await updateDatabase(async (data) => {
     const actor = actorFrom(data, request);
-    if (!isSupervisor(actor)) throw new HttpError(403, "Seul un vérificateur peut créer une tâche.", "FORBIDDEN");
+    if (!canManageOperations(actor)) throw new HttpError(403, "Ce compte ne peut pas créer de tâche.", "FORBIDDEN");
 
     if (input.clientRequestId) {
       const existing = data.tasks.find(
@@ -135,8 +135,8 @@ export async function createTaskRecord(request, response) {
       throw new HttpError(400, "Le département sélectionné n'existe pas.", "INVALID_DEPARTMENT");
     }
     const verifier = data.users.find((user) => user.id === input.verifierId && user.isActive !== false);
-    if (!verifier || !isSupervisor(verifier)) {
-      throw new HttpError(400, "Le vérificateur doit être un superviseur actif.", "INVALID_VERIFIER");
+    if (!verifier || !isCombinedUser(verifier)) {
+      throw new HttpError(400, "Le vérificateur doit disposer d'un compte actif.", "INVALID_VERIFIER");
     }
     validateResponsibleUsers(data, input.responsibleIds);
 
@@ -175,72 +175,86 @@ export async function updateTaskRecord(request, response, taskId) {
 
     const previousStatus = task.status;
     const previousDueDate = task.dueDateLabel;
-    const note = Object.hasOwn(body, "note") ? text(body.note, "La note", { max: 2000 }) : "";
+    let note = Object.hasOwn(body, "note") ? text(body.note, "La note", { max: 2000 }) : "";
+    const responsible = taskResponsibleIds(task).includes(actor.id);
+    const managementFields = [
+      "dueDateLabel", "responsibleIds", "assignedEmployeeId", "verifierId",
+      "title", "description", "priority", "estimatedDuration",
+    ];
+    const hasManagementChanges = managementFields.some((field) => Object.hasOwn(body, field));
+    const canManage = canManageTask(actor, task);
 
-    if (isEmployee(actor)) {
-      rejectUnknownFields(body, ["status", "note", "dueDateChangeRequest"]);
-      if (!taskResponsibleIds(task).includes(actor.id)) {
-        throw new HttpError(403, "Cette tâche n'est pas affectée à ce responsable.", "FORBIDDEN");
-      }
+    if (hasManagementChanges && !canManage) {
+      throw new HttpError(403, "Vous ne pouvez pas administrer cette tâche.", "FORBIDDEN");
+    }
 
-      if (Object.hasOwn(body, "status")) {
-        const nextStatus = enumValue(body.status, "Le statut", TASK_STATUSES);
-        if (nextStatus !== previousStatus && !(EMPLOYEE_TRANSITIONS[previousStatus] || []).includes(nextStatus)) {
-          throw new HttpError(409, `Transition interdite : ${statusLabel(previousStatus)} vers ${statusLabel(nextStatus)}.`, "INVALID_TRANSITION");
-        }
-        task.status = nextStatus;
-      }
-      if (Object.hasOwn(body, "dueDateChangeRequest")) {
-        const requestText = text(body.dueDateChangeRequest, "La demande de date", { required: true, max: 1000 });
-        task.dueDateChangeRequest = requestText;
-        addNotification(data, task.createdBy, `${task.id} : demande de changement de date`, task.id);
-      }
-    } else {
-      if (!canManageTask(actor, task)) throw new HttpError(403, "Vous ne pouvez pas modifier cette tâche.", "FORBIDDEN");
-
-      if (Object.hasOwn(body, "status")) {
-        const nextStatus = enumValue(body.status, "Le statut", TASK_STATUSES);
+    if (Object.hasOwn(body, "status")) {
+      const nextStatus = enumValue(body.status, "Le statut", TASK_STATUSES);
+      if (nextStatus !== previousStatus && previousStatus === "Waiting for Review") {
         if (!canReviewTask(actor, task)) {
           throw new HttpError(403, "Seul le vérificateur désigné peut valider cette tâche.", "FORBIDDEN");
         }
-        if (previousStatus !== "Waiting for Review" || !["Completed", "In Progress"].includes(nextStatus)) {
+        if (!["Completed", "Rejected"].includes(nextStatus)) {
           throw new HttpError(409, "Cette décision n'est pas autorisée pour le statut actuel.", "INVALID_TRANSITION");
         }
-        task.status = nextStatus;
+        if (nextStatus === "Rejected") {
+          note = text(body.note, "Le motif du rejet", { required: true, min: 3, max: 2000 });
+        }
+      } else if (nextStatus !== previousStatus) {
+        if (!responsible) {
+          throw new HttpError(403, "Cette tâche ne vous est pas affectée comme responsable.", "FORBIDDEN");
+        }
+        if (!(EMPLOYEE_TRANSITIONS[previousStatus] || []).includes(nextStatus)) {
+          throw new HttpError(409, `Transition interdite : ${statusLabel(previousStatus)} vers ${statusLabel(nextStatus)}.`, "INVALID_TRANSITION");
+        }
+      } else if (!responsible && !canManage) {
+        throw new HttpError(403, "Vous ne pouvez pas intervenir sur cette tâche.", "FORBIDDEN");
       }
-
-      if (Object.hasOwn(body, "dueDateLabel")) task.dueDateLabel = assertDueDate(body.dueDateLabel);
-      if (Object.hasOwn(body, "dueDateChangeRequest")) {
-        task.dueDateChangeRequest = text(body.dueDateChangeRequest, "La demande de date", { max: 1000 });
-      }
-      if (Object.hasOwn(body, "responsibleIds") || Object.hasOwn(body, "assignedEmployeeId")) {
-        const ids = stringArray(
-          Object.hasOwn(body, "responsibleIds") ? body.responsibleIds : [body.assignedEmployeeId],
-          "Le responsable",
-          { required: true },
-        );
-        validateResponsibleUsers(data, ids);
-        task.responsibleIds = ids;
-        task.assignedEmployeeId = ids[0];
-      }
-      if (Object.hasOwn(body, "verifierId")) {
-        const verifierId = text(body.verifierId, "Le vérificateur", { required: true, max: 80 });
-        const verifier = data.users.find((user) => user.id === verifierId && user.isActive !== false);
-        if (!verifier || !isSupervisor(verifier)) throw new HttpError(400, "Le vérificateur n'est pas valide.", "INVALID_VERIFIER");
-        task.verifierId = verifierId;
-        task.supervisorId = verifierId;
-      }
-      if (Object.hasOwn(body, "title")) task.title = text(body.title, "Le titre", { required: true, min: 3, max: 160 });
-      if (Object.hasOwn(body, "description")) task.description = text(body.description, "La description", { max: 3000 });
-      if (Object.hasOwn(body, "priority")) task.priority = enumValue(body.priority, "La priorité", ["", "Low", "Medium", "High", "Critical"]);
-      if (Object.hasOwn(body, "estimatedDuration")) task.estimatedDuration = text(body.estimatedDuration, "La durée", { required: true, max: 80 });
+      task.status = nextStatus;
     }
 
+    if (Object.hasOwn(body, "dueDateLabel")) task.dueDateLabel = assertDueDate(body.dueDateLabel);
+    if (Object.hasOwn(body, "dueDateChangeRequest")) {
+      if (responsible && !hasManagementChanges) {
+        const requestText = text(body.dueDateChangeRequest, "La demande de date", { required: true, max: 1000 });
+        task.dueDateChangeRequest = requestText;
+        addNotification(data, task.createdBy, `${task.id} : demande de changement de date`, task.id);
+      } else {
+        if (!canManage) throw new HttpError(403, "Vous ne pouvez pas traiter cette demande de date.", "FORBIDDEN");
+        task.dueDateChangeRequest = text(body.dueDateChangeRequest, "La demande de date", { max: 1000 });
+      }
+    }
+    if (Object.hasOwn(body, "responsibleIds") || Object.hasOwn(body, "assignedEmployeeId")) {
+      const ids = stringArray(
+        Object.hasOwn(body, "responsibleIds") ? body.responsibleIds : [body.assignedEmployeeId],
+        "Le responsable",
+        { required: true },
+      );
+      validateResponsibleUsers(data, ids);
+      task.responsibleIds = ids;
+      task.assignedEmployeeId = ids[0];
+    }
+    if (Object.hasOwn(body, "verifierId")) {
+      const verifierId = text(body.verifierId, "Le vérificateur", { required: true, max: 80 });
+      const verifier = data.users.find((user) => user.id === verifierId && user.isActive !== false);
+      if (!verifier || !isCombinedUser(verifier)) throw new HttpError(400, "Le vérificateur n'est pas valide.", "INVALID_VERIFIER");
+      task.verifierId = verifierId;
+      task.supervisorId = verifierId;
+    }
+    if (Object.hasOwn(body, "title")) task.title = text(body.title, "Le titre", { required: true, min: 3, max: 160 });
+    if (Object.hasOwn(body, "description")) task.description = text(body.description, "La description", { max: 3000 });
+    if (Object.hasOwn(body, "priority")) task.priority = enumValue(body.priority, "La priorité", ["", "Low", "Medium", "High", "Critical"]);
+    if (Object.hasOwn(body, "estimatedDuration")) task.estimatedDuration = text(body.estimatedDuration, "La durée", { required: true, max: 80 });
+
+    const changedAt = new Date().toISOString();
     addNote(task, actor.id, note);
-    if (task.status === "In Progress" && !task.startedAt) task.startedAt = new Date().toISOString();
-    if (task.status === "Waiting for Review" && previousStatus !== task.status) task.completedAt = new Date().toISOString();
-    if (task.status === "Completed" && previousStatus !== task.status) task.approvedAt = new Date().toISOString();
-    if (task.status === "In Progress" && previousStatus === "Waiting for Review") {
+    if (task.status === "In Progress" && !task.startedAt) task.startedAt = changedAt;
+    if (task.status === "Waiting for Review" && previousStatus !== task.status) task.completedAt = changedAt;
+    if (task.status === "Completed" && previousStatus !== task.status) task.approvedAt = changedAt;
+    if (task.status === "Rejected" && previousStatus === "Waiting for Review") {
+      task.rejectionReason = note;
+      task.rejectedBy = actor.id;
+      task.rejectedAt = changedAt;
       task.refusalCount = Number(task.refusalCount || 0) + 1;
     }
 
@@ -253,14 +267,14 @@ export async function updateTaskRecord(request, response, taskId) {
     if (task.status === "Completed" && previousStatus !== task.status) {
       taskResponsibleIds(task).forEach((userId) => addNotification(data, userId, `${task.id} a été validée`, task.id));
     }
-    if (task.status === "In Progress" && previousStatus === "Waiting for Review") {
-      taskResponsibleIds(task).forEach((userId) => addNotification(data, userId, `${task.id} a été refusée et revient en cours`, task.id));
+    if (task.status === "Rejected" && previousStatus === "Waiting for Review") {
+      taskResponsibleIds(task).forEach((userId) => addNotification(data, userId, `${task.id} a été rejetée : ${task.rejectionReason}`, task.id));
     }
 
-    const activityMessage = note
-      ? `${task.id} : nouvelle note ajoutée`
-      : task.status !== previousStatus
-        ? `${task.id} est passée à l'état ${statusLabel(task.status)}`
+    const activityMessage = task.status !== previousStatus
+      ? `${task.id} est passée à l'état ${statusLabel(task.status)}`
+      : note
+        ? `${task.id} : nouvelle note ajoutée`
         : `${task.id} a été mise à jour`;
     addActivity(data, actor.id, activityMessage);
     addAuditEntry(data, {

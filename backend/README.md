@@ -73,9 +73,10 @@ POST   /api/change-password
 GET    /api/tasks
 POST   /api/tasks
 PATCH  /api/tasks/:id
-GET    /api/users
-POST   /api/users
-PATCH  /api/users/:id
+DELETE /api/tasks/:id
+GET    /api/users          (Administrateur)
+POST   /api/users          (Administrateur)
+PATCH  /api/users/:id      (Administrateur)
 GET    /api/departments
 POST   /api/departments
 ```
@@ -133,6 +134,17 @@ npm run db:import -- --file "database/richbond-db.json" --confirm
 npm run db:status
 npm run db:audit
 ```
+
+Pour créer le premier compte Administrateur dans le moteur configuré, définir
+`ADMIN_EMAIL`, `ADMIN_PASSWORD` et, si nécessaire, `ADMIN_DEPARTMENT_ID`, puis
+exécuter :
+
+```powershell
+npm run admin:create
+```
+
+La commande ne journalise pas le mot de passe et impose son remplacement à la
+première connexion.
 
 ## Sauvegarde JSON locale
 

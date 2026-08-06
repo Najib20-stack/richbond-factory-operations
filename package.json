@@ -29,7 +29,8 @@
     "db:import": "npm run db:import --prefix backend --",
     "db:audit": "npm run db:audit --prefix backend",
     "db:export": "npm run db:export --prefix backend --",
-    "db:backup": "npm run db:backup --prefix backend --"
+    "db:backup": "npm run db:backup --prefix backend --",
+    "admin:create": "npm run admin:create --prefix backend"
   },
   "engines": {
     "node": ">=22"

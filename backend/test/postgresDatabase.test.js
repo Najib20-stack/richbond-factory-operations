@@ -17,22 +17,40 @@ test("les migrations et l'adaptateur PostgreSQL conservent les données", {
     kpis: { efficiency: 93 },
     weeklyProduction: [{ day: "Lun", value: 72 }],
     departments: [{ id: "pg-d1", name: "Production", description: "Département de test", capacity: 70 }],
-    users: [{
-      id: "pg-u1",
-      firstName: "Nadia",
-      lastName: "Test",
-      email: "nadia.pg@test.local",
-      passwordHash: await hashPassword("SecurePass1"),
-      role: "Superviseur",
-      departmentId: "pg-d1",
-      phone: "",
-      avatar: "",
-      isActive: true,
-      load: 20,
-      createdAt: "2026-08-03T10:00:00.000Z",
-      mustChangePassword: false,
-      passwordUpdatedAt: "2026-08-03T10:00:00.000Z",
-    }],
+    users: [
+      {
+        id: "pg-u1",
+        firstName: "Nadia",
+        lastName: "Test",
+        email: "nadia.pg@test.local",
+        passwordHash: await hashPassword("SecurePass1"),
+        role: "Superviseur",
+        departmentId: "pg-d1",
+        phone: "",
+        avatar: "",
+        isActive: true,
+        load: 20,
+        createdAt: "2026-08-03T10:00:00.000Z",
+        mustChangePassword: false,
+        passwordUpdatedAt: "2026-08-03T10:00:00.000Z",
+      },
+      {
+        id: "pg-a1",
+        firstName: "Amine",
+        lastName: "Admin",
+        email: "admin.pg@test.local",
+        passwordHash: await hashPassword("SecurePass1"),
+        role: "Administrateur",
+        departmentId: "pg-d1",
+        phone: "",
+        avatar: "",
+        isActive: true,
+        load: 0,
+        createdAt: "2026-08-03T10:00:00.000Z",
+        mustChangePassword: false,
+        passwordUpdatedAt: "2026-08-03T10:00:00.000Z",
+      },
+    ],
     tasks: [{
       id: "PG-T1",
       title: "Contrôle PostgreSQL",
@@ -59,6 +77,9 @@ test("les migrations et l'adaptateur PostgreSQL conservent les données", {
       startedAt: null,
       completedAt: null,
       approvedAt: null,
+      rejectionReason: "Écart de qualité sur la couture.",
+      rejectedBy: "pg-u1",
+      rejectedAt: "2026-08-03T11:00:00.000Z",
       notes: [],
       refusalCount: 0,
     }],
@@ -76,6 +97,10 @@ test("les migrations et l'adaptateur PostgreSQL conservent les données", {
     assert.equal(stored.tasks[0].responsibleIds[0], "pg-u1");
     assert.equal(stored.tasks[0].dueDate, "");
     assert.equal(stored.tasks[0].dueDateLabel, "En retard");
+    assert.equal(stored.tasks[0].rejectionReason, "Écart de qualité sur la couture.");
+    assert.equal(stored.tasks[0].rejectedBy, "pg-u1");
+    assert.equal(stored.tasks[0].rejectedAt, "2026-08-03T11:00:00.000Z");
+    assert.equal(stored.users.find((user) => user.id === "pg-a1").role, "Administrateur");
 
     const title = await database.updateDatabase((data) => {
       data.tasks[0].title = "Contrôle transactionnel";
@@ -83,6 +108,67 @@ test("les migrations et l'adaptateur PostgreSQL conservent les données", {
     });
     assert.equal(title, "Contrôle transactionnel");
     assert.equal((await database.readDatabase()).tasks[0].title, title);
+
+    const loginUser = await database.findUserForLogin("NADIA.PG@TEST.LOCAL");
+    assert.equal(loginUser.id, "pg-u1");
+    assert.equal(loginUser.departmentName, "Production");
+
+    const session = {
+      id: "pg-session-1",
+      tokenHash: "pg-test-token-hash",
+      userId: "pg-u1",
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      userAgent: "node-test",
+    };
+    await database.commitLogin({
+      session,
+      auditEntry: {
+        id: "pg-audit-login",
+        actorId: "pg-u1",
+        action: "auth.login",
+        targetType: "session",
+        targetId: session.id,
+        details: {},
+        createdAt: new Date().toISOString(),
+      },
+    });
+    const authentication = await database.findAuthentication(session.tokenHash);
+    assert.equal(authentication.session.id, session.id);
+    assert.equal(authentication.user.id, "pg-u1");
+
+    const replacementHash = await hashPassword("ReplacementPass2");
+    await database.commitPasswordChange({
+      userId: "pg-u1",
+      passwordHash: replacementHash,
+      passwordUpdatedAt: new Date().toISOString(),
+      exceptSessionId: session.id,
+      auditEntry: {
+        id: "pg-audit-password",
+        actorId: "pg-u1",
+        action: "auth.password_changed",
+        targetType: "user",
+        targetId: "pg-u1",
+        details: {},
+        createdAt: new Date().toISOString(),
+      },
+    });
+    assert.equal((await database.readDatabase()).users[0].passwordHash, replacementHash);
+
+    await database.commitLogout({
+      userId: "pg-u1",
+      sessionId: session.id,
+      auditEntry: {
+        id: "pg-audit-logout",
+        actorId: "pg-u1",
+        action: "auth.logout",
+        targetType: "session",
+        targetId: session.id,
+        details: {},
+        createdAt: new Date().toISOString(),
+      },
+    });
+    assert.equal(await database.findAuthentication(session.tokenHash), null);
     assert.equal(await database.checkDatabase(), true);
   } finally {
     await database.closeDatabase();

@@ -3,7 +3,7 @@ import { getBootstrap, getHealth } from "../controllers/bootstrapController.js";
 import { createDepartmentRecord, listDepartments } from "../controllers/departmentController.js";
 import { createTaskRecord, deleteTaskRecord, listTasks, updateTaskRecord } from "../controllers/taskController.js";
 import { createUserRecord, listUsers, updateUserRecord } from "../controllers/userController.js";
-import { authenticateRequest, requireSupervisor } from "../security/authorization.js";
+import { authenticateRequest, requireAdministrator, requireOperationsRole } from "../security/authorization.js";
 import { sendJson } from "../utils/http.js";
 
 export async function handleApi(request, response, url) {
@@ -40,7 +40,7 @@ export async function handleApi(request, response, url) {
   }
 
   if (request.method === "POST" && url.pathname === "/api/tasks") {
-    if (requireSupervisor(request, response)) await createTaskRecord(request, response);
+    if (requireOperationsRole(request, response)) await createTaskRecord(request, response);
     return;
   }
 
@@ -51,23 +51,23 @@ export async function handleApi(request, response, url) {
   }
 
   if (taskMatch && request.method === "DELETE") {
-    if (requireSupervisor(request, response)) await deleteTaskRecord(request, response, decodeURIComponent(taskMatch[1]));
+    if (requireOperationsRole(request, response)) await deleteTaskRecord(request, response, decodeURIComponent(taskMatch[1]));
     return;
   }
 
   if (request.method === "GET" && url.pathname === "/api/users") {
-    if (requireSupervisor(request, response)) await listUsers(request, response);
+    if (requireAdministrator(request, response)) await listUsers(request, response);
     return;
   }
 
   if (request.method === "POST" && url.pathname === "/api/users") {
-    if (requireSupervisor(request, response)) await createUserRecord(request, response);
+    if (requireAdministrator(request, response)) await createUserRecord(request, response);
     return;
   }
 
   const userMatch = url.pathname.match(/^\/api\/users\/([^/]+)$/);
   if (userMatch && request.method === "PATCH") {
-    if (requireSupervisor(request, response)) await updateUserRecord(request, response, decodeURIComponent(userMatch[1]));
+    if (requireAdministrator(request, response)) await updateUserRecord(request, response, decodeURIComponent(userMatch[1]));
     return;
   }
 
@@ -77,7 +77,7 @@ export async function handleApi(request, response, url) {
   }
 
   if (request.method === "POST" && url.pathname === "/api/departments") {
-    if (requireSupervisor(request, response)) await createDepartmentRecord(request, response);
+    if (requireOperationsRole(request, response)) await createDepartmentRecord(request, response);
     return;
   }
 

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { DATABASE_AUTO_SEED, SEED_FILE } from "../config/env.js";
 import { hashPassword, isPasswordHash, LEGACY_INITIAL_PASSWORD } from "../security/passwords.js";
+import { canonicalRole } from "../utils/roles.js";
 import { auditDatabase } from "./databaseMaintenance.js";
 import { runMigrations } from "./migrations.js";
 import { closePostgresPool, postgresPool } from "./postgresPool.js";
@@ -24,11 +25,78 @@ function databaseDate(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(candidate) ? candidate : null;
 }
 
-function canonicalRole(role) {
-  const normalized = String(role || "").toLowerCase();
-  if (normalized.includes("super") || normalized.includes("vérif")) return "Superviseur";
-  if (normalized.includes("employ") || normalized.includes("responsable")) return "Employé";
-  return role;
+function userFromRow(row, departmentName = row.department_name) {
+  return {
+    id: row.id,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    email: row.email,
+    passwordHash: row.password_hash,
+    role: canonicalRole(row.role),
+    departmentId: row.department_id,
+    departmentName: departmentName || "Operations",
+    phone: row.phone,
+    avatar: row.avatar,
+    isActive: row.is_active,
+    load: row.load,
+    createdAt: iso(row.created_at),
+    mustChangePassword: row.must_change_password,
+    passwordUpdatedAt: iso(row.password_updated_at),
+  };
+}
+
+function sessionFromRow(row) {
+  return {
+    id: row.id,
+    tokenHash: row.token_hash,
+    userId: row.user_id,
+    createdAt: iso(row.created_at),
+    expiresAt: iso(row.expires_at),
+    userAgent: row.user_agent,
+  };
+}
+
+async function insertAuditEntry(client, entry) {
+  await client.query(
+    `INSERT INTO audit_log (
+       id, actor_id, action, target_type, target_id, details, created_at, sort_order
+     ) VALUES (
+       $1, (SELECT id FROM users WHERE id = $2), $3, $4, $5, $6::jsonb, $7,
+       (SELECT COALESCE(MIN(sort_order), 0) - 1 FROM audit_log)
+     )`,
+    [
+      entry.id,
+      entry.actorId || null,
+      entry.action,
+      entry.targetType,
+      entry.targetId,
+      JSON.stringify(entry.details || {}),
+      entry.createdAt,
+    ],
+  );
+  await client.query(
+    `DELETE FROM audit_log
+     WHERE id IN (
+       SELECT id FROM audit_log
+       ORDER BY sort_order, created_at DESC, id
+       OFFSET 2000
+     )`,
+  );
+}
+
+async function runTransaction(operation) {
+  const client = await postgresPool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await operation(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 function repairedFrench(value) {
@@ -143,10 +211,11 @@ async function persistData(client, rawData) {
          assigned_employee_id, verifier_id, supervisor_id, priority, status,
          estimated_duration, due_date, due_date_label, due_date_change_request, attachments,
          created_by, created_at, started_at, completed_at, approved_at,
-         refusal_count, client_request_id, sort_order
+         rejection_reason, rejected_by, rejected_at, refusal_count, client_request_id, sort_order
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-         $15, $16, $17, $18, $19, $20::jsonb, $21, $22, $23, $24, $25, $26, $27, $28
+         $15, $16, $17, $18, $19, $20::jsonb, $21, $22, $23, $24, $25, $26,
+         $27, $28, $29, $30, $31
        )
        ON CONFLICT (id) DO UPDATE SET
          title = EXCLUDED.title, description = EXCLUDED.description,
@@ -163,6 +232,8 @@ async function persistData(client, rawData) {
          attachments = EXCLUDED.attachments, created_by = EXCLUDED.created_by,
          created_at = EXCLUDED.created_at, started_at = EXCLUDED.started_at,
          completed_at = EXCLUDED.completed_at, approved_at = EXCLUDED.approved_at,
+         rejection_reason = EXCLUDED.rejection_reason,
+         rejected_by = EXCLUDED.rejected_by, rejected_at = EXCLUDED.rejected_at,
          refusal_count = EXCLUDED.refusal_count,
          client_request_id = EXCLUDED.client_request_id, sort_order = EXCLUDED.sort_order`,
       [
@@ -174,8 +245,9 @@ async function persistData(client, rawData) {
         task.estimatedDuration || "1h", dueDate, task.dueDateLabel || dueDate || "",
         task.dueDateChangeRequest || "", JSON.stringify(task.attachments || []),
         task.createdBy || null, task.createdAt, task.startedAt || null,
-        task.completedAt || null, task.approvedAt || null, Number(task.refusalCount || 0),
-        task.clientRequestId || "", sortOrder,
+        task.completedAt || null, task.approvedAt || null, task.rejectionReason || "",
+        userIds.has(task.rejectedBy) ? task.rejectedBy : null, task.rejectedAt || null,
+        Number(task.refusalCount || 0), task.clientRequestId || "", sortOrder,
       ],
     );
   }
@@ -317,7 +389,7 @@ async function loadData(client) {
       lastName: row.last_name,
       email: row.email,
       passwordHash: row.password_hash,
-      role: row.role,
+      role: canonicalRole(row.role),
       departmentId: row.department_id,
       phone: row.phone,
       avatar: row.avatar,
@@ -354,6 +426,9 @@ async function loadData(client) {
       startedAt: iso(row.started_at),
       completedAt: iso(row.completed_at),
       approvedAt: iso(row.approved_at),
+      rejectionReason: row.rejection_reason || "",
+      rejectedBy: row.rejected_by,
+      rejectedAt: iso(row.rejected_at),
       notes: noteMap.get(row.id) || [],
       refusalCount: row.refusal_count,
       clientRequestId: row.client_request_id,
@@ -478,6 +553,118 @@ export async function updateDatabase(mutator) {
   } finally {
     client.release();
   }
+}
+
+export async function findUserForLogin(email) {
+  await ensureDatabase();
+  const result = await postgresPool.query(
+    `SELECT u.*, d.name AS department_name
+     FROM users u
+     LEFT JOIN departments d ON d.id = u.department_id
+     WHERE LOWER(u.email) = LOWER($1) AND u.is_active = TRUE
+     LIMIT 1`,
+    [String(email || "")],
+  );
+  return result.rows[0] ? structuredClone(userFromRow(result.rows[0])) : null;
+}
+
+export async function findAuthentication(tokenHash) {
+  if (!tokenHash) return null;
+  await ensureDatabase();
+  const result = await postgresPool.query(
+    `SELECT
+       to_jsonb(s) AS session_data,
+       to_jsonb(u) AS user_data,
+       d.name AS department_name
+     FROM sessions s
+     JOIN users u ON u.id = s.user_id
+     LEFT JOIN departments d ON d.id = u.department_id
+     WHERE s.token_hash = $1
+       AND s.expires_at > NOW()
+       AND u.is_active = TRUE
+     LIMIT 1`,
+    [tokenHash],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return structuredClone({
+    session: sessionFromRow(row.session_data),
+    user: userFromRow(row.user_data, row.department_name),
+  });
+}
+
+export async function commitLogin({ session, auditEntry }) {
+  await ensureDatabase();
+  await runTransaction(async (client) => {
+    const user = await client.query(
+      "SELECT id FROM users WHERE id = $1 AND is_active = TRUE FOR UPDATE",
+      [session.userId],
+    );
+    if (!user.rowCount) throw new Error("Utilisateur actif introuvable.");
+
+    await client.query("DELETE FROM sessions WHERE expires_at <= NOW()");
+    await client.query(
+      `DELETE FROM sessions
+       WHERE id IN (
+         SELECT id FROM sessions
+         WHERE user_id = $1 AND expires_at > NOW()
+         ORDER BY created_at DESC, sort_order DESC, id DESC
+         OFFSET 4
+       )`,
+      [session.userId],
+    );
+    await client.query(
+      `INSERT INTO sessions (
+         id, token_hash, user_id, created_at, expires_at, user_agent, sort_order
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6,
+         (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM sessions)
+       )`,
+      [
+        session.id,
+        session.tokenHash,
+        session.userId,
+        session.createdAt,
+        session.expiresAt,
+        session.userAgent || "",
+      ],
+    );
+    await insertAuditEntry(client, auditEntry);
+  });
+}
+
+export async function commitLogout({ userId, sessionId, auditEntry }) {
+  await ensureDatabase();
+  await runTransaction(async (client) => {
+    await client.query("DELETE FROM sessions WHERE id = $1 AND user_id = $2", [sessionId, userId]);
+    await insertAuditEntry(client, auditEntry);
+  });
+}
+
+export async function commitPasswordChange({
+  userId,
+  passwordHash,
+  passwordUpdatedAt,
+  exceptSessionId,
+  auditEntry,
+}) {
+  await ensureDatabase();
+  await runTransaction(async (client) => {
+    const updated = await client.query(
+      `UPDATE users
+       SET password_hash = $2,
+           must_change_password = FALSE,
+           password_updated_at = $3
+       WHERE id = $1 AND is_active = TRUE`,
+      [userId, passwordHash, passwordUpdatedAt],
+    );
+    if (!updated.rowCount) throw new Error("Utilisateur actif introuvable.");
+    await client.query(
+      "DELETE FROM sessions WHERE user_id = $1 AND id <> $2",
+      [userId, exceptSessionId],
+    );
+    await insertAuditEntry(client, auditEntry);
+  });
 }
 
 export const databaseEngine = "postgresql";

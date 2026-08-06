@@ -7,14 +7,19 @@ développement local et comme source de l'import initial.
 
 ## Rôles métier
 
-- **Vérificateur** : crée et affecte les tâches, contrôle les travaux, gère les
-  utilisateurs et les départements, puis consulte les rapports.
-- **Responsable** : consulte uniquement ses tâches, les démarre, les met en
-  pause, signale un problème, demande une nouvelle échéance et les soumet à la
-  vérification.
+L'application sépare deux rôles avec une autorisation contrôlée par l'API :
 
-Le backend contrôle ces droits sur chaque requête. Masquer un écran dans le
-frontend ne suffit jamais à donner ou à retirer une autorisation.
+- **Vérificateur/Responsable** crée des tâches, exécute celles qui lui sont
+  affectées et vérifie uniquement celles pour lesquelles il est désigné. Il ne
+  voit que les tâches qui le concernent et uniquement son propre indice.
+- **Administrateur** consulte et gère toutes les tâches, filtre le suivi par
+  département, contrôle les indices de tous les Vérificateurs/Responsables et
+  dispose en plus des espaces **Utilisateurs** et **Rapports**.
+
+L'espace **To Do** a été supprimé. Pour le Vérificateur/Responsable, la création,
+le suivi et l'exécution sont désormais regroupés dans **Tâches**. La décision
+finale reste réservée au vérificateur désigné, y compris face à un
+administrateur.
 
 ## Démarrage local
 
@@ -40,9 +45,12 @@ L'interface Vite est alors disponible sur `http://localhost:5173`.
 ## Comptes de démonstration
 
 ```text
-Vérificateur : verificateur.demo1@example.test
-Responsable  : responsable.demo1@example.test
+Compte 1 : verificateur.demo1@example.test
+Compte 2 : responsable.demo1@example.test
 Mot de passe temporaire : richbond123
+
+Administrateur local : admin@richbond.local
+Mot de passe temporaire : AdminRichbond1
 ```
 
 Ces comptes imposent le choix d'un nouveau mot de passe à la première
@@ -70,6 +78,18 @@ npm run db:import -- --file "database/richbond-db.json" --confirm
 npm run db:audit
 ```
 
+Pour provisionner le premier administrateur dans une base PostgreSQL existante :
+
+```powershell
+$env:ADMIN_EMAIL="administrateur@richbond.ma"
+$env:ADMIN_PASSWORD="MotDePasseTemporaire1"
+$env:ADMIN_DEPARTMENT_ID="bigbed"
+npm run admin:create --prefix backend
+```
+
+La commande crée le compte, ou sécurise le compte portant déjà cette adresse,
+révoque ses sessions et impose un changement de mot de passe à la connexion.
+
 La restauration est volontairement protégée par une confirmation explicite :
 
 ```powershell
@@ -91,8 +111,8 @@ docs/            guides, recette et procédures d'exploitation
 
 - [Application Android](ANDROID.md)
 - [Déploiement sur le serveur de l'entreprise](DEPLOYMENT.md)
-- [Guide du vérificateur](docs/GUIDE_VERIFICATEUR.md)
-- [Guide du responsable](docs/GUIDE_RESPONSABLE.md)
+- [Guide Vérificateur/Responsable](docs/GUIDE_VERIFICATEUR.md)
+- [Guide Administrateur](docs/GUIDE_ADMINISTRATEUR.md)
 - [Recette fonctionnelle](docs/RECETTE_FONCTIONNELLE.md)
 - [Exploitation et reprise](docs/EXPLOITATION.md)
 - [Décisions à confirmer avec l'entreprise](docs/DECISIONS_EN_ATTENTE.md)

@@ -30,7 +30,12 @@ export function createApiClient({
 } = {}) {
   async function request(path, options = {}) {
     const method = String(options.method || "GET").toUpperCase();
-    const { token, headers: customHeaders, ...fetchOptions } = options;
+    const {
+      token,
+      headers: customHeaders,
+      timeoutMs: requestTimeoutMs = timeoutMs,
+      ...fetchOptions
+    } = options;
     const maxAttempts = method === "GET" ? 2 : 1;
     let lastError;
 
@@ -40,7 +45,7 @@ export function createApiClient({
       }
 
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
       const headers = {
         Accept: "application/json",
         ...(options.body ? { "Content-Type": "application/json" } : {}),

@@ -1,7 +1,7 @@
-import { readDatabase } from "../database/database.js";
+import { findAuthentication } from "../database/database.js";
 import { sendJson } from "../utils/http.js";
 import { roleKey } from "../utils/roles.js";
-import { findSession } from "./sessions.js";
+import { hashSessionToken } from "./sessions.js";
 
 function bearerToken(request) {
   const authorization = String(request.headers.authorization || "");
@@ -11,9 +11,9 @@ function bearerToken(request) {
 
 export async function authenticateRequest(request, response, { allowPasswordChange = false } = {}) {
   const token = bearerToken(request);
-  const data = await readDatabase();
-  const session = findSession(data, token);
-  const user = session ? data.users.find((item) => item.id === session.userId && item.isActive !== false) : null;
+  const authentication = token ? await findAuthentication(hashSessionToken(token)) : null;
+  const session = authentication?.session;
+  const user = authentication?.user;
 
   if (!session || !user) {
     sendJson(response, 401, { error: "Session absente, expirée ou révoquée.", code: "AUTH_REQUIRED" });
@@ -29,12 +29,25 @@ export async function authenticateRequest(request, response, { allowPasswordChan
     userId: user.id,
     sessionId: session.id,
     role: roleKey(user.role),
+    user,
   };
   return true;
 }
 
-export function requireSupervisor(request, response) {
-  if (request.auth?.role === "supervisor") return true;
-  sendJson(response, 403, { error: "Cette action est réservée aux vérificateurs.", code: "FORBIDDEN" });
+export function requireCombinedRole(request, response) {
+  if (request.auth?.role === "combined") return true;
+  sendJson(response, 403, { error: "Cette action est réservée aux comptes Vérificateur/Responsable.", code: "FORBIDDEN" });
+  return false;
+}
+
+export function requireOperationsRole(request, response) {
+  if (["admin", "combined"].includes(request.auth?.role)) return true;
+  sendJson(response, 403, { error: "Ce compte ne peut pas gérer les opérations.", code: "FORBIDDEN" });
+  return false;
+}
+
+export function requireAdministrator(request, response) {
+  if (request.auth?.role === "admin") return true;
+  sendJson(response, 403, { error: "Cette action est réservée aux administrateurs.", code: "FORBIDDEN" });
   return false;
 }

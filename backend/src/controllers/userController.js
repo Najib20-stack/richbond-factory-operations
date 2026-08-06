@@ -5,12 +5,13 @@ import { revokeUserSessions } from "../security/sessions.js";
 import { addAuditEntry } from "../utils/audit.js";
 import { enrich } from "../utils/enrich.js";
 import { HttpError, readRequestBody, sendJson } from "../utils/http.js";
+import { ADMIN_ROLE, COMBINED_ROLE, roleKey } from "../utils/roles.js";
 import { email, numberValue, rejectUnknownFields, text } from "../utils/validation.js";
 
 function canonicalRole(value) {
-  const normalized = String(value || "").toLowerCase();
-  if (normalized.includes("super") || normalized.includes("vérif")) return "Superviseur";
-  if (normalized.includes("employ") || normalized.includes("responsable")) return "Employé";
+  const key = roleKey(value);
+  if (key === "admin") return ADMIN_ROLE;
+  if (key === "combined") return COMBINED_ROLE;
   throw new HttpError(400, "Le rôle n'est pas valide.", "VALIDATION_ERROR");
 }
 
@@ -103,8 +104,8 @@ export async function updateUserRecord(request, response, userId) {
 
     if (Object.hasOwn(body, "role")) {
       const nextRole = canonicalRole(body.role);
-      if (user.id === request.auth.userId && nextRole !== "Superviseur") {
-        throw new HttpError(400, "Vous ne pouvez pas retirer votre propre rôle de vérificateur.", "SELF_ROLE_CHANGE");
+      if (user.id === request.auth.userId && nextRole !== ADMIN_ROLE) {
+        throw new HttpError(400, "Vous ne pouvez pas retirer votre propre rôle d'administrateur.", "SELF_ROLE_CHANGE");
       }
       user.role = nextRole;
     }

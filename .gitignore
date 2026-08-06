@@ -8,6 +8,7 @@ backups/
 database/richbond-db.json
 dist/
 .cache/
+.tools/
 .vite/
 android/.gradle/
 android/.idea/

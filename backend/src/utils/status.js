@@ -8,7 +8,7 @@ const statusLabels = {
   Completed: "terminée",
   Blocked: "bloquée",
   Cancelled: "annulée",
-  Rejected: "refusée",
+  Rejected: "rejetée",
 };
 
 export function statusLabel(status) {

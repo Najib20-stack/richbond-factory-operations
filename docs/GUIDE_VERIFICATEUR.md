@@ -1,25 +1,39 @@
-# Guide du vérificateur
+# Guide Vérificateur/Responsable
 
-Le vérificateur crée et affecte les tâches, contrôle le travail et administre
-les données de référence.
+Le compte Vérificateur/Responsable dispose d'un espace personnel. Les
+responsabilités restent nominatives sur chaque tâche afin de garantir la
+traçabilité.
 
-## Parcours d'une tâche
+## Navigation
+
+- **Tableau de bord** présente les indicateurs, les notifications et les engagements.
+- **Tâches** permet de créer une tâche et de suivre ses propres créations.
+- **À faire** permet d'exécuter uniquement les tâches affectées au compte.
+- **Supervision** permet de gérer ses propres créations et de traiter ses vérifications désignées.
+- **Paramètres** contient les départements et l'état des contrôles de sécurité.
+
+## Créer et affecter une tâche
 
 1. Ouvrir **Tâches**, puis **Nouvelle tâche**.
-2. Choisir le département, au moins un responsable, le vérificateur, l'échéance
-   et les informations de production.
-3. Suivre la tâche dans **Supervision**.
-4. Traiter une éventuelle demande de changement de date.
-5. Quand l'état devient **En attente de vérification**, contrôler le résultat.
-6. Sélectionner **Valider** si le travail est conforme ou **Refuser** avec un
-   motif précis si une correction est nécessaire.
+2. Choisir le département, le ou les responsables, le vérificateur et l'échéance.
+3. Renseigner les informations utiles, puis confirmer la création.
 
-Seul le vérificateur désigné peut prendre la décision finale. Un autre
-vérificateur voit la tâche en lecture seule.
+## Exécuter une tâche
 
-## Administration
+1. Ouvrir **À faire**, puis sélectionner une tâche affectée au compte comme responsable.
+2. Utiliser **Démarrer**, **Signaler un problème**, **Ajouter une note** ou
+   **Demander une nouvelle date** selon la situation.
+3. Utiliser **Marquer comme terminée** pour envoyer le travail en vérification.
 
-- **Utilisateurs** crée, active ou désactive les comptes.
-- **Départements** ajoute les unités de production.
-- **Rapports** filtre les tâches par période et département avant export.
-- La désactivation d'un compte révoque ses sessions actives.
+## Vérifier une tâche
+
+1. Ouvrir **Supervision**.
+2. Dans **En attente de vérification**, contrôler le résultat.
+3. Sélectionner **Valider** ou **Rejeter**. Un motif précis est obligatoire pour tout rejet.
+4. Après un rejet, vérifier que la tâche passe à l'état **Rejetée** et que le responsable voit le motif dans **À faire**.
+
+Seul le vérificateur désigné peut prendre la décision finale. La création, la
+modification et la désactivation des comptes ne sont pas disponibles pour ce
+rôle. Une personne ne peut consulter que les tâches qu'elle a créées, qui lui
+sont affectées ou qu'elle doit vérifier. Elle ne voit que son propre indice de
+respect d'engagement.

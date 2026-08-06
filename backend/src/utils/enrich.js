@@ -23,6 +23,7 @@ export function enrich(data) {
     const verifier = users.get(task.verifierId || task.supervisorId);
     const supervisor = users.get(task.supervisorId);
     const creator = users.get(task.createdBy);
+    const rejector = users.get(task.rejectedBy);
 
     return {
       ...task,
@@ -33,6 +34,7 @@ export function enrich(data) {
       verifierName: verifier ? `${verifier.firstName} ${verifier.lastName}` : "Non affecté",
       supervisorName: supervisor ? `${supervisor.firstName} ${supervisor.lastName}` : "Non affecté",
       creatorName: creator ? `${creator.firstName} ${creator.lastName}` : "Non affecté",
+      rejectedByName: rejector ? `${rejector.firstName} ${rejector.lastName}` : "",
     };
   });
 

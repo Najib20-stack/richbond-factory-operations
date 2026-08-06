@@ -1,17 +1,21 @@
 import { randomBytes } from "node:crypto";
-import { readDatabase, updateDatabase } from "../database/database.js";
+import {
+  commitLogin,
+  commitLogout,
+  commitPasswordChange,
+  findUserForLogin,
+} from "../database/database.js";
 import { clearLoginFailures, loginAvailability, recordLoginFailure } from "../security/loginProtection.js";
 import { hashPassword, validateNewPassword, verifyPassword } from "../security/passwords.js";
-import { createSession, revokeSession, revokeUserSessions } from "../security/sessions.js";
-import { addAuditEntry } from "../utils/audit.js";
+import { createSession } from "../security/sessions.js";
+import { createAuditEntry } from "../utils/audit.js";
 import { HttpError, readRequestBody, sendJson } from "../utils/http.js";
 import { roleKey } from "../utils/roles.js";
 import { rejectUnknownFields, text } from "../utils/validation.js";
 
 const dummyHashPromise = hashPassword(randomBytes(24).toString("base64url"));
 
-function sessionUser(data, user) {
-  const department = data.departments.find((item) => item.id === user.departmentId);
+function sessionUser(user) {
   return {
     id: user.id,
     firstName: user.firstName,
@@ -20,7 +24,7 @@ function sessionUser(data, user) {
     role: user.role,
     roleKey: roleKey(user.role),
     departmentId: user.departmentId,
-    departmentName: department?.name || "Operations",
+    departmentName: user.departmentName || "Operations",
     requiresPasswordChange: Boolean(user.mustChangePassword),
   };
 }
@@ -45,8 +49,7 @@ export async function login(request, response) {
     return;
   }
 
-  const snapshot = await readDatabase();
-  const candidate = snapshot.users.find((item) => item.email.toLowerCase() === email && item.isActive !== false);
+  const candidate = await findUserForLogin(email);
   const passwordMatches = await verifyPassword(password, candidate?.passwordHash || await dummyHashPromise);
 
   if (!candidate || !passwordMatches) {
@@ -56,31 +59,34 @@ export async function login(request, response) {
   }
 
   clearLoginFailures(request, email);
-  const result = await updateDatabase(async (data) => {
-    const user = data.users.find((item) => item.id === candidate.id && item.isActive !== false);
-    if (!user) throw new HttpError(401, "Email ou mot de passe incorrect.", "INVALID_CREDENTIALS");
-    const { token, session } = createSession(data, user, request);
-    addAuditEntry(data, {
-      actorId: user.id,
+  const { token, session } = createSession({ sessions: [] }, candidate, request);
+  await commitLogin({
+    session,
+    auditEntry: createAuditEntry({
+      actorId: candidate.id,
       action: "auth.login",
       targetType: "session",
       targetId: session.id,
-    });
-    return { token, expiresAt: session.expiresAt, user: sessionUser(data, user) };
+    }),
   });
 
-  sendJson(response, 200, result);
+  sendJson(response, 200, {
+    token,
+    expiresAt: session.expiresAt,
+    user: sessionUser(candidate),
+  });
 }
 
 export async function logout(request, response) {
-  await updateDatabase(async (data) => {
-    revokeSession(data, request.auth.sessionId);
-    addAuditEntry(data, {
+  await commitLogout({
+    userId: request.auth.userId,
+    sessionId: request.auth.sessionId,
+    auditEntry: createAuditEntry({
       actorId: request.auth.userId,
       action: "auth.logout",
       targetType: "session",
       targetId: request.auth.sessionId,
-    });
+    }),
   });
   sendJson(response, 200, { ok: true });
 }
@@ -96,24 +102,32 @@ export async function changePassword(request, response) {
     throw new HttpError(400, "Le nouveau mot de passe doit être différent de l'ancien.", "PASSWORD_UNCHANGED");
   }
 
-  const result = await updateDatabase(async (data) => {
-    const user = data.users.find((item) => item.id === request.auth.userId && item.isActive !== false);
-    if (!user || !(await verifyPassword(currentPassword, user.passwordHash))) {
-      throw new HttpError(400, "Le mot de passe actuel est incorrect.", "INVALID_CURRENT_PASSWORD");
-    }
+  const user = request.auth.user;
+  if (!user || !(await verifyPassword(currentPassword, user.passwordHash))) {
+    throw new HttpError(400, "Le mot de passe actuel est incorrect.", "INVALID_CURRENT_PASSWORD");
+  }
 
-    user.passwordHash = await hashPassword(newPassword);
-    user.mustChangePassword = false;
-    user.passwordUpdatedAt = new Date().toISOString();
-    revokeUserSessions(data, user.id, request.auth.sessionId);
-    addAuditEntry(data, {
+  const passwordHash = await hashPassword(newPassword);
+  const passwordUpdatedAt = new Date().toISOString();
+  await commitPasswordChange({
+    userId: user.id,
+    passwordHash,
+    passwordUpdatedAt,
+    exceptSessionId: request.auth.sessionId,
+    auditEntry: createAuditEntry({
       actorId: user.id,
       action: "auth.password_changed",
       targetType: "user",
       targetId: user.id,
-    });
-    return { user: sessionUser(data, user) };
+    }),
   });
 
-  sendJson(response, 200, result);
+  sendJson(response, 200, {
+    user: sessionUser({
+      ...user,
+      passwordHash,
+      mustChangePassword: false,
+      passwordUpdatedAt,
+    }),
+  });
 }

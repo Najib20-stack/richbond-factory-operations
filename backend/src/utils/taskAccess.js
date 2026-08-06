@@ -7,16 +7,19 @@ export function taskResponsibleIds(task) {
 }
 
 export function canViewTask(user, task) {
-  if (roleKey(user.role) === "supervisor") {
-    return task.departmentId === user.departmentId || task.createdBy === user.id || (task.verifierId || task.supervisorId) === user.id;
-  }
-  return taskResponsibleIds(task).includes(user.id);
+  const role = roleKey(user?.role);
+  if (role === "admin") return true;
+  if (role !== "combined") return false;
+  return task.createdBy === user.id
+    || (task.verifierId || task.supervisorId) === user.id
+    || taskResponsibleIds(task).includes(user.id);
 }
 
 export function canManageTask(user, task) {
-  return roleKey(user.role) === "supervisor" && canViewTask(user, task);
+  const role = roleKey(user?.role);
+  return role === "admin" || (role === "combined" && task.createdBy === user.id);
 }
 
 export function canReviewTask(user, task) {
-  return roleKey(user.role) === "supervisor" && (task.verifierId || task.supervisorId) === user.id;
+  return roleKey(user?.role) === "combined" && (task.verifierId || task.supervisorId) === user.id;
 }

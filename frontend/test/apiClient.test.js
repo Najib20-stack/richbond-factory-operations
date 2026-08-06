@@ -63,4 +63,27 @@ describe("client API", () => {
     await expect(client.request("/api/tasks", { method: "POST", body: "{}" })).rejects.toBeInstanceOf(ApiError);
     expect(fetchImpl).toHaveBeenCalledOnce();
   });
+
+  it("accepte un delai specifique pour une requete lente", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchImpl = vi.fn((_url, options) => new Promise((resolve, reject) => {
+        const responseTimer = setTimeout(() => resolve(jsonResponse(200, { ok: true })), 20);
+        options.signal.addEventListener("abort", () => {
+          clearTimeout(responseTimer);
+          const error = new Error("aborted");
+          error.name = "AbortError";
+          reject(error);
+        });
+      }));
+      const client = createApiClient({ fetchImpl, timeoutMs: 5 });
+      const response = client.request("/api/login", { method: "POST", timeoutMs: 30 });
+
+      await vi.advanceTimersByTimeAsync(20);
+      await expect(response).resolves.toEqual({ ok: true });
+      expect(fetchImpl.mock.calls[0][1]).not.toHaveProperty("timeoutMs");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
