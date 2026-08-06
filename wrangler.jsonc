@@ -1,0 +1,34 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "richbond-operations",
+  "main": "cloudflare/worker.mjs",
+  "workers_dev": true,
+  "preview_urls": false,
+  "compatibility_date": "2026-08-06",
+  "compatibility_flags": ["nodejs_compat"],
+  "placement": {
+    "mode": "smart"
+  },
+  "assets": {
+    "directory": "./frontend/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "vars": {
+    "NODE_ENV": "production",
+    "DATABASE_SSL_MODE": "verify-full",
+    "DATABASE_POOL_MAX": "3",
+    "DATABASE_EPHEMERAL_CONNECTIONS": "true",
+    "DATABASE_CONNECTION_TIMEOUT_MS": "15000",
+    "DATABASE_STATEMENT_TIMEOUT_MS": "15000",
+    "DATABASE_AUTO_SEED": "false",
+    "DATABASE_SKIP_MIGRATIONS": "true",
+    "CORS_ORIGINS": "https://localhost,capacitor://localhost",
+    "SESSION_TTL_MS": "43200000",
+    "LOGIN_MAX_ATTEMPTS": "5",
+    "LOGIN_WINDOW_MS": "900000",
+    "LOGIN_LOCK_MS": "900000",
+    "MAX_REQUEST_BODY_BYTES": "1048576"
+  }
+}

@@ -1,6 +1,7 @@
 import pg from "pg";
 import {
   DATABASE_CONNECTION_TIMEOUT_MS,
+  DATABASE_EPHEMERAL_CONNECTIONS,
   DATABASE_POOL_MAX,
   DATABASE_SSL_MODE,
   DATABASE_STATEMENT_TIMEOUT_MS,
@@ -32,6 +33,7 @@ export const postgresPool = new Pool({
   connectionString: normalizedConnectionString(),
   ssl: sslConfiguration(),
   max: DATABASE_POOL_MAX,
+  maxUses: DATABASE_EPHEMERAL_CONNECTIONS ? 1 : Infinity,
   connectionTimeoutMillis: DATABASE_CONNECTION_TIMEOUT_MS,
   statement_timeout: DATABASE_STATEMENT_TIMEOUT_MS,
   application_name: "richbond-operations",

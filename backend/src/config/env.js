@@ -1,8 +1,9 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const currentFile = fileURLToPath(import.meta.url);
-const currentDir = path.dirname(currentFile);
+const currentDir = import.meta.url
+  ? path.dirname(fileURLToPath(import.meta.url))
+  : path.resolve(process.cwd(), "backend", "src", "config");
 
 function positiveNumber(name, fallback) {
   const value = Number(process.env[name]);
@@ -34,7 +35,13 @@ export const DATABASE_SSL_MODE = String(
 export const DATABASE_POOL_MAX = Math.floor(positiveNumber("DATABASE_POOL_MAX", 10));
 export const DATABASE_CONNECTION_TIMEOUT_MS = positiveNumber("DATABASE_CONNECTION_TIMEOUT_MS", 10000);
 export const DATABASE_STATEMENT_TIMEOUT_MS = positiveNumber("DATABASE_STATEMENT_TIMEOUT_MS", 15000);
+export const DATABASE_EPHEMERAL_CONNECTIONS = String(
+  process.env.DATABASE_EPHEMERAL_CONNECTIONS || "false",
+).toLowerCase() === "true";
 export const DATABASE_AUTO_SEED = String(process.env.DATABASE_AUTO_SEED || "false").toLowerCase() === "true";
+export const DATABASE_SKIP_MIGRATIONS = String(
+  process.env.DATABASE_SKIP_MIGRATIONS || "false",
+).toLowerCase() === "true";
 export const MIGRATIONS_DIR = path.join(PROJECT_ROOT, "database", "migrations");
 export const SESSION_TTL_MS = positiveNumber("SESSION_TTL_MS", 12 * 60 * 60 * 1000);
 export const MAX_REQUEST_BODY_BYTES = positiveNumber("MAX_REQUEST_BODY_BYTES", 1024 * 1024);

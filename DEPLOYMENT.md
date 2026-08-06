@@ -1,13 +1,19 @@
-# Déploiement Neon et Render
+# Déploiement gratuit Neon et Cloudflare
 
-L'environnement temporaire utilise Neon pour PostgreSQL et Render pour le
-backend Node.js. Le backend sert également le frontend React. Le navigateur et
-l'application Android utilisent donc une seule adresse HTTPS.
+L'environnement temporaire utilise Neon pour PostgreSQL et Cloudflare Workers
+pour le backend Node.js et le frontend React. Le navigateur et l'application
+Android utilisent la même API HTTPS.
 
 ```text
-Navigateur / Android -> HTTPS Render -> API Node.js -> TLS Neon PostgreSQL
-                                            |
-                                      frontend React
+Navigateur / Android -> HTTPS Cloudflare -> API Node.js -> TLS Neon PostgreSQL
+                              |
+                        frontend React
+```
+
+Adresse publique actuelle :
+
+```text
+https://richbond-operations.richbond-ma.workers.dev
 ```
 
 ## Préparation locale
@@ -19,59 +25,50 @@ npm ci
 npm test
 npm run check
 npm run data:audit
-npm run data:backup
+npm run build
 ```
 
 Le déploiement doit être interrompu si l'une de ces commandes échoue.
 
 ## Base Neon
 
-La base est créée et administrée avec le plugin Neon Postgres. Le schéma est
-défini dans `database/migrations/` et appliqué par :
+Le schéma est défini dans `database/migrations/`. Les migrations et l'import
+initial doivent être exécutés depuis un poste autorisé avant le déploiement du
+Worker :
 
 ```powershell
 npm run db:migrate
-```
-
-L'import initial conserve les utilisateurs, mots de passe hachés, tâches,
-notes, activités, rapports, notifications et traces d'audit :
-
-```powershell
 npm run db:import -- --file "database/richbond-db.json" --confirm
 npm run db:audit
 npm run db:status
 ```
 
-Les sessions locales ne sont jamais importées. Tous les utilisateurs doivent
-se reconnecter au service déployé. `database/richbond-db.json` est un fichier
-privé, ignoré par Git, qui doit rester sur le poste autorisé à effectuer
-l'import.
+Les sessions locales ne sont jamais importées. Le fichier
+`database/richbond-db.json` est privé et ignoré par Git. L'adresse PostgreSQL
+Neon doit rester dans un gestionnaire de secrets et ne doit jamais apparaître
+dans Git, un journal ou une capture d'écran.
 
-## Backend Render
+## Backend Cloudflare
 
-Le fichier `render.yaml` configure le Web Service :
-
-- dépôt GitHub : `Najib20-stack/richbond-factory-operations` ;
-- branche : `main` ;
-- région : Oregon, à proximité de la base Neon temporaire en `us-west-2` ;
-- build : `npm ci && npm test && npm run build` ;
-- démarrage : `node backend/server.mjs` ;
-- contrôle de santé : `/api/health`.
-
-Render demande la valeur secrète `DATABASE_URL` pendant la création du
-Blueprint. Utiliser l'URL PostgreSQL fournie par Neon. Elle ne doit apparaître
-ni dans Git, ni dans un journal, ni dans une capture d'écran.
-
-Le backend applique automatiquement les migrations au démarrage. Il refuse de
-démarrer en production si `DATABASE_URL` est absente ou si PostgreSQL est
-injoignable.
-
-## Validation après déploiement
-
-Remplacer l'adresse ci-dessous par l'URL Render réelle :
+Le fichier `wrangler.jsonc` configure le Worker, les fichiers React statiques,
+le routage `/api/*` et les paramètres de production non secrets. La variable
+`DATABASE_URL` est enregistrée séparément comme secret Cloudflare :
 
 ```powershell
-Invoke-RestMethod https://richbond-operations.onrender.com/api/health
+npx wrangler login
+npx wrangler secret put DATABASE_URL
+npm run cloudflare:deploy
+```
+
+La dernière commande reconstruit le frontend puis déploie le backend et les
+fichiers statiques. Le Worker utilise la connexion PostgreSQL groupée fournie
+par Neon et ouvre une connexion éphémère par requête.
+
+## Validation
+
+```powershell
+Invoke-RestMethod `
+  https://richbond-operations.richbond-ma.workers.dev/api/health
 ```
 
 La réponse attendue contient :
@@ -84,24 +81,33 @@ La réponse attendue contient :
 }
 ```
 
-Tester ensuite une connexion de vérificateur, une connexion de responsable, la
-création d'une tâche, son démarrage, sa soumission et sa validation.
+Il faut ensuite vérifier la connexion de chaque rôle, la création et
+l'affectation d'une tâche, son exécution, son rejet motivé, sa vérification et
+l'export des rapports.
 
 ## Android
 
-Après validation de l'API HTTPS :
+Le fichier local ignoré `frontend/.env.android.local` doit contenir :
+
+```dotenv
+VITE_API_URL=https://richbond-operations.richbond-ma.workers.dev
+```
+
+Puis synchroniser et construire l'application :
 
 ```powershell
-$env:VITE_API_URL="https://richbond-operations.onrender.com"
 npm run android:sync
+Set-Location android
+.\gradlew.bat assembleDebug --no-daemon
 ```
 
 L'application Android ne contient jamais les identifiants PostgreSQL. Elle
-communique uniquement avec l'API Render.
+communique uniquement avec l'API Cloudflare.
 
-## Limites temporaires
+## Limites de l'environnement gratuit
 
-Une instance Render gratuite se met en veille lorsqu'elle reste inactive. Pour
-une présentation planifiée, ouvrir le site quelques minutes avant ou utiliser
-une instance payante. L'infrastructure finale pourra être déplacée vers le
-serveur de l'entreprise en changeant `DATABASE_URL` et l'URL du backend.
+Cette infrastructure gratuite convient aux essais, aux démonstrations et au
+pilote. Elle est soumise aux quotas de Cloudflare Workers et de Neon et ne
+constitue pas un hébergement d'entreprise avec garantie de disponibilité. Pour
+la production interne, le Worker et la base pourront être déplacés vers
+l'infrastructure approuvée par Richbond sans modifier les workflows métier.

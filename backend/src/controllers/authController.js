@@ -13,7 +13,14 @@ import { HttpError, readRequestBody, sendJson } from "../utils/http.js";
 import { roleKey } from "../utils/roles.js";
 import { rejectUnknownFields, text } from "../utils/validation.js";
 
-const dummyHashPromise = hashPassword(randomBytes(24).toString("base64url"));
+let dummyHashPromise;
+
+function dummyPasswordHash() {
+  if (!dummyHashPromise) {
+    dummyHashPromise = hashPassword(randomBytes(24).toString("base64url"));
+  }
+  return dummyHashPromise;
+}
 
 function sessionUser(user) {
   return {
@@ -50,7 +57,7 @@ export async function login(request, response) {
   }
 
   const candidate = await findUserForLogin(email);
-  const passwordMatches = await verifyPassword(password, candidate?.passwordHash || await dummyHashPromise);
+  const passwordMatches = await verifyPassword(password, candidate?.passwordHash || await dummyPasswordHash());
 
   if (!candidate || !passwordMatches) {
     recordLoginFailure(request, email);

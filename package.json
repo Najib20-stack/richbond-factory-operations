@@ -17,6 +17,9 @@
     "android:open": "cap open android",
     "android:run": "npm run android:sync && cap run android",
     "android:build": "npm run android:sync && cap build android",
+    "cloudflare:dev": "npm run build && wrangler dev",
+    "cloudflare:deploy": "npm run build && wrangler deploy",
+    "cloudflare:tail": "wrangler tail",
     "check": "npm run check:all --prefix backend && npm run check --prefix frontend",
     "check:backend": "npm run check:all --prefix backend",
     "check:frontend": "npm run check --prefix frontend",
@@ -40,6 +43,7 @@
     "@capacitor/core": "^8.4.2"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.4.2"
+    "@capacitor/cli": "^8.4.2",
+    "wrangler": "^4.119.0"
   }
 }

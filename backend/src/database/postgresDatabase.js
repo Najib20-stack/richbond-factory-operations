@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { DATABASE_AUTO_SEED, SEED_FILE } from "../config/env.js";
+import { DATABASE_AUTO_SEED, DATABASE_SKIP_MIGRATIONS, SEED_FILE } from "../config/env.js";
 import { hashPassword, isPasswordHash, LEGACY_INITIAL_PASSWORD } from "../security/passwords.js";
 import { canonicalRole } from "../utils/roles.js";
 import { auditDatabase } from "./databaseMaintenance.js";
@@ -475,7 +475,7 @@ async function loadData(client) {
 }
 
 async function initialize() {
-  await runMigrations(postgresPool);
+  if (!DATABASE_SKIP_MIGRATIONS) await runMigrations(postgresPool);
   if (!DATABASE_AUTO_SEED) return;
   const count = await postgresPool.query("SELECT COUNT(*)::int AS count FROM departments");
   if (count.rows[0].count > 0) return;
