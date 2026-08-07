@@ -24,6 +24,7 @@
     "node": ">=22"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
     "pg": "^8.22.0"
   }
 }

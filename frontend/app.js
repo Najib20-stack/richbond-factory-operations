@@ -1177,7 +1177,7 @@ export function App() {
     if (!session?.token) return false;
     if (showLoading) setLoading(true);
     try {
-      const nextData = await request("/api/bootstrap");
+      const nextData = await request("/api/bootstrap", { timeoutMs: 30000 });
       setData(nextData);
       setErrorMessage("");
       return true;
