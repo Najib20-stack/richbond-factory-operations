@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { isDeepStrictEqual } from "node:util";
 import { DATABASE_AUTO_SEED, DATABASE_SKIP_MIGRATIONS, SEED_FILE } from "../config/env.js";
 import { hashPassword, isPasswordHash, LEGACY_INITIAL_PASSWORD } from "../security/passwords.js";
 import { canonicalRole } from "../utils/roles.js";
@@ -7,6 +8,16 @@ import { runMigrations } from "./migrations.js";
 import { closePostgresPool, postgresPool } from "./postgresPool.js";
 
 const COLLECTIONS = ["departments", "users", "tasks", "activities", "reports", "notifications", "sessions", "auditLog"];
+const SORTED_COLLECTIONS = [
+  ["departments", "departments"],
+  ["users", "users"],
+  ["tasks", "tasks"],
+  ["activities", "activities"],
+  ["reports", "reports"],
+  ["notifications", "notifications"],
+  ["sessions", "sessions"],
+  ["auditLog", "audit_log"],
+];
 let initializationPromise;
 
 function iso(value) {
@@ -146,37 +157,124 @@ async function deleteMissing(client, table, ids) {
   }
 }
 
-async function persistData(client, rawData) {
+async function deleteRemoved(client, table, currentItems, previousItems) {
+  if (!previousItems) {
+    await deleteMissing(client, table, currentItems.map((item) => item.id));
+    return;
+  }
+  const currentIds = new Set(currentItems.map((item) => item.id));
+  const removedIds = previousItems.filter((item) => !currentIds.has(item.id)).map((item) => item.id);
+  if (removedIds.length) {
+    await client.query(`DELETE FROM ${table} WHERE id = ANY($1::text[])`, [removedIds]);
+  }
+}
+
+async function readSortOrderState(client) {
+  const statements = SORTED_COLLECTIONS.map(
+    ([collection, table]) => `SELECT '${collection}' AS collection, id, sort_order FROM ${table}`,
+  );
+  const result = await client.query(statements.join(" UNION ALL "));
+  const state = new Map(SORTED_COLLECTIONS.map(([collection]) => [
+    collection,
+    { byId: new Map(), minimum: 0, maximum: -1 },
+  ]));
+
+  for (const row of result.rows) {
+    const collection = state.get(row.collection);
+    const sortOrder = Number(row.sort_order);
+    collection.byId.set(row.id, sortOrder);
+    if (collection.byId.size === 1) {
+      collection.minimum = sortOrder;
+      collection.maximum = sortOrder;
+    } else {
+      collection.minimum = Math.min(collection.minimum, sortOrder);
+      collection.maximum = Math.max(collection.maximum, sortOrder);
+    }
+  }
+  return state;
+}
+
+function createSortOrderResolver(data, previousData, state) {
+  if (!previousData) return (_collection, _item, position) => position;
+  const assigned = new Map();
+
+  for (const [collection] of SORTED_COLLECTIONS) {
+    const items = data[collection];
+    const previousIds = new Set(previousData[collection].map((item) => item.id));
+    const collectionState = state.get(collection);
+    const newEntries = items
+      .map((item, position) => ({ item, position }))
+      .filter(({ item }) => !previousIds.has(item.id));
+
+    if (!collectionState.byId.size) {
+      newEntries.forEach(({ item }, position) => assigned.set(`${collection}:${item.id}`, position));
+      continue;
+    }
+
+    const firstExistingPosition = items.findIndex((item) => previousIds.has(item.id));
+    const before = newEntries.filter(({ position }) => firstExistingPosition >= 0 && position < firstExistingPosition);
+    const after = newEntries.filter(({ item }) => !before.some((entry) => entry.item.id === item.id));
+    before.forEach(({ item }, position) => {
+      assigned.set(`${collection}:${item.id}`, collectionState.minimum - before.length + position);
+    });
+    after.forEach(({ item }, position) => {
+      assigned.set(`${collection}:${item.id}`, collectionState.maximum + position + 1);
+    });
+  }
+
+  return (collection, item, position) => state.get(collection).byId.get(item.id)
+    ?? assigned.get(`${collection}:${item.id}`)
+    ?? position;
+}
+
+async function persistData(client, rawData, previousRawData = null) {
   const data = await normalizeData(rawData);
+  const previousData = previousRawData ? await normalizeData(previousRawData) : null;
   const audit = auditDatabase(data);
   if (!audit.ok) throw new Error(`Données PostgreSQL refusées : ${audit.errors.join(" ")}`);
   const userIds = new Set(data.users.map((user) => user.id));
+  const previousMaps = new Map(COLLECTIONS.map((collection) => [
+    collection,
+    new Map((previousData?.[collection] || []).map((item) => [item.id, item])),
+  ]));
+  const shouldPersist = (collection, item) => !previousData
+    || !isDeepStrictEqual(previousMaps.get(collection).get(item.id), item);
+  const sortOrderState = previousData ? await readSortOrderState(client) : null;
+  const resolveSortOrder = createSortOrderResolver(data, previousData, sortOrderState);
 
-  await client.query(
-    `INSERT INTO app_settings (key, value) VALUES ('kpis', $1::jsonb)
-     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
-    [JSON.stringify(data.kpis)],
-  );
-  await client.query("DELETE FROM weekly_production");
-  for (const [position, item] of data.weeklyProduction.entries()) {
+  if (!previousData || !isDeepStrictEqual(previousData.kpis, data.kpis)) {
     await client.query(
-      "INSERT INTO weekly_production (position, day, value) VALUES ($1, $2, $3)",
-      [position, item.day, Number(item.value || 0)],
+      `INSERT INTO app_settings (key, value) VALUES ('kpis', $1::jsonb)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [JSON.stringify(data.kpis)],
     );
+  }
+  if (!previousData || !isDeepStrictEqual(previousData.weeklyProduction, data.weeklyProduction)) {
+    await client.query("DELETE FROM weekly_production");
+    for (const [position, item] of data.weeklyProduction.entries()) {
+      await client.query(
+        "INSERT INTO weekly_production (position, day, value) VALUES ($1, $2, $3)",
+        [position, item.day, Number(item.value || 0)],
+      );
+    }
   }
 
   for (const [sortOrder, department] of data.departments.entries()) {
+    if (!shouldPersist("departments", department)) continue;
+    const databaseSortOrder = resolveSortOrder("departments", department, sortOrder);
     await client.query(
       `INSERT INTO departments (id, name, description, capacity, sort_order)
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (id) DO UPDATE SET
          name = EXCLUDED.name, description = EXCLUDED.description,
          capacity = EXCLUDED.capacity, sort_order = EXCLUDED.sort_order`,
-      [department.id, department.name, department.description || "", Number(department.capacity || 0), sortOrder],
+      [department.id, department.name, department.description || "", Number(department.capacity || 0), databaseSortOrder],
     );
   }
 
   for (const [sortOrder, user] of data.users.entries()) {
+    if (!shouldPersist("users", user)) continue;
+    const databaseSortOrder = resolveSortOrder("users", user, sortOrder);
     await client.query(
       `INSERT INTO users (
          id, first_name, last_name, email, password_hash, role, department_id,
@@ -197,12 +295,14 @@ async function persistData(client, rawData) {
         user.id, user.firstName, user.lastName, String(user.email).toLowerCase(), user.passwordHash,
         user.role, user.departmentId, user.phone || "", user.avatar || "", user.isActive !== false,
         Number(user.load || 0), user.createdAt || null, Boolean(user.mustChangePassword),
-        user.passwordUpdatedAt || null, sortOrder,
+        user.passwordUpdatedAt || null, databaseSortOrder,
       ],
     );
   }
 
   for (const [sortOrder, task] of data.tasks.entries()) {
+    if (!shouldPersist("tasks", task)) continue;
+    const databaseSortOrder = resolveSortOrder("tasks", task, sortOrder);
     const dueDate = databaseDate(task.dueDate || task.dueDateLabel);
     await client.query(
       `INSERT INTO tasks (
@@ -247,14 +347,21 @@ async function persistData(client, rawData) {
         task.createdBy || null, task.createdAt, task.startedAt || null,
         task.completedAt || null, task.approvedAt || null, task.rejectionReason || "",
         userIds.has(task.rejectedBy) ? task.rejectedBy : null, task.rejectedAt || null,
-        Number(task.refusalCount || 0), task.clientRequestId || "", sortOrder,
+        Number(task.refusalCount || 0), task.clientRequestId || "", databaseSortOrder,
       ],
     );
   }
 
-  await client.query("DELETE FROM task_responsibles");
-  await client.query("DELETE FROM task_notes");
-  for (const task of data.tasks) {
+  const changedTasks = data.tasks.filter((task) => shouldPersist("tasks", task));
+  if (!previousData) {
+    await client.query("DELETE FROM task_responsibles");
+    await client.query("DELETE FROM task_notes");
+  } else if (changedTasks.length) {
+    const changedTaskIds = changedTasks.map((task) => task.id);
+    await client.query("DELETE FROM task_responsibles WHERE task_id = ANY($1::text[])", [changedTaskIds]);
+    await client.query("DELETE FROM task_notes WHERE task_id = ANY($1::text[])", [changedTaskIds]);
+  }
+  for (const task of changedTasks) {
     for (const [position, userId] of task.responsibleIds.entries()) {
       await client.query(
         "INSERT INTO task_responsibles (task_id, user_id, position) VALUES ($1, $2, $3)",
@@ -271,6 +378,8 @@ async function persistData(client, rawData) {
   }
 
   for (const [sortOrder, activity] of data.activities.entries()) {
+    if (!shouldPersist("activities", activity)) continue;
+    const databaseSortOrder = resolveSortOrder("activities", activity, sortOrder);
     await client.query(
       `INSERT INTO activities (id, message, time_label, actor_id, created_at, sort_order)
        VALUES ($1, $2, $3, $4, $5, $6)
@@ -278,22 +387,26 @@ async function persistData(client, rawData) {
          message = EXCLUDED.message, time_label = EXCLUDED.time_label,
          actor_id = EXCLUDED.actor_id, created_at = EXCLUDED.created_at,
          sort_order = EXCLUDED.sort_order`,
-      [activity.id, activity.message, activity.time || "", userIds.has(activity.actorId) ? activity.actorId : null, activity.createdAt || null, sortOrder],
+      [activity.id, activity.message, activity.time || "", userIds.has(activity.actorId) ? activity.actorId : null, activity.createdAt || null, databaseSortOrder],
     );
   }
 
   for (const [sortOrder, report] of data.reports.entries()) {
+    if (!shouldPersist("reports", report)) continue;
+    const databaseSortOrder = resolveSortOrder("reports", report, sortOrder);
     await client.query(
       `INSERT INTO reports (id, name, description, status, sort_order)
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (id) DO UPDATE SET
          name = EXCLUDED.name, description = EXCLUDED.description,
          status = EXCLUDED.status, sort_order = EXCLUDED.sort_order`,
-      [report.id, report.name, report.description || "", report.status || "Ready", sortOrder],
+      [report.id, report.name, report.description || "", report.status || "Ready", databaseSortOrder],
     );
   }
 
   for (const [sortOrder, notification] of data.notifications.entries()) {
+    if (!shouldPersist("notifications", notification)) continue;
+    const databaseSortOrder = resolveSortOrder("notifications", notification, sortOrder);
     await client.query(
       `INSERT INTO notifications (id, user_id, task_id, message, is_read, created_at, sort_order)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -301,11 +414,13 @@ async function persistData(client, rawData) {
          user_id = EXCLUDED.user_id, task_id = EXCLUDED.task_id,
          message = EXCLUDED.message, is_read = EXCLUDED.is_read,
          created_at = EXCLUDED.created_at, sort_order = EXCLUDED.sort_order`,
-      [notification.id, userIds.has(notification.userId) ? notification.userId : null, notification.taskId || null, notification.message, Boolean(notification.isRead), notification.createdAt || null, sortOrder],
+      [notification.id, userIds.has(notification.userId) ? notification.userId : null, notification.taskId || null, notification.message, Boolean(notification.isRead), notification.createdAt || null, databaseSortOrder],
     );
   }
 
   for (const [sortOrder, session] of data.sessions.entries()) {
+    if (!shouldPersist("sessions", session)) continue;
+    const databaseSortOrder = resolveSortOrder("sessions", session, sortOrder);
     await client.query(
       `INSERT INTO sessions (id, token_hash, user_id, created_at, expires_at, user_agent, sort_order)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -313,11 +428,13 @@ async function persistData(client, rawData) {
          token_hash = EXCLUDED.token_hash, user_id = EXCLUDED.user_id,
          created_at = EXCLUDED.created_at, expires_at = EXCLUDED.expires_at,
          user_agent = EXCLUDED.user_agent, sort_order = EXCLUDED.sort_order`,
-      [session.id, session.tokenHash, session.userId, session.createdAt, session.expiresAt, session.userAgent || "", sortOrder],
+      [session.id, session.tokenHash, session.userId, session.createdAt, session.expiresAt, session.userAgent || "", databaseSortOrder],
     );
   }
 
   for (const [sortOrder, entry] of data.auditLog.entries()) {
+    if (!shouldPersist("auditLog", entry)) continue;
+    const databaseSortOrder = resolveSortOrder("auditLog", entry, sortOrder);
     await client.query(
       `INSERT INTO audit_log (id, actor_id, action, target_type, target_id, details, created_at, sort_order)
        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
@@ -326,18 +443,18 @@ async function persistData(client, rawData) {
          target_type = EXCLUDED.target_type, target_id = EXCLUDED.target_id,
          details = EXCLUDED.details, created_at = EXCLUDED.created_at,
          sort_order = EXCLUDED.sort_order`,
-      [entry.id, userIds.has(entry.actorId) ? entry.actorId : null, entry.action, entry.targetType, entry.targetId, JSON.stringify(entry.details || {}), entry.createdAt, sortOrder],
+      [entry.id, userIds.has(entry.actorId) ? entry.actorId : null, entry.action, entry.targetType, entry.targetId, JSON.stringify(entry.details || {}), entry.createdAt, databaseSortOrder],
     );
   }
 
-  await deleteMissing(client, "activities", data.activities.map((item) => item.id));
-  await deleteMissing(client, "reports", data.reports.map((item) => item.id));
-  await deleteMissing(client, "notifications", data.notifications.map((item) => item.id));
-  await deleteMissing(client, "sessions", data.sessions.map((item) => item.id));
-  await deleteMissing(client, "audit_log", data.auditLog.map((item) => item.id));
-  await deleteMissing(client, "tasks", data.tasks.map((item) => item.id));
-  await deleteMissing(client, "users", data.users.map((item) => item.id));
-  await deleteMissing(client, "departments", data.departments.map((item) => item.id));
+  await deleteRemoved(client, "activities", data.activities, previousData?.activities);
+  await deleteRemoved(client, "reports", data.reports, previousData?.reports);
+  await deleteRemoved(client, "notifications", data.notifications, previousData?.notifications);
+  await deleteRemoved(client, "sessions", data.sessions, previousData?.sessions);
+  await deleteRemoved(client, "audit_log", data.auditLog, previousData?.auditLog);
+  await deleteRemoved(client, "tasks", data.tasks, previousData?.tasks);
+  await deleteRemoved(client, "users", data.users, previousData?.users);
+  await deleteRemoved(client, "departments", data.departments, previousData?.departments);
 
   return data;
 }
@@ -543,8 +660,9 @@ export async function updateDatabase(mutator) {
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock(hashtext('richbond_application_data'))");
     const data = await loadData(client);
+    const previousData = structuredClone(data);
     const result = await mutator(data);
-    await persistData(client, data);
+    await persistData(client, data, previousData);
     await client.query("COMMIT");
     return structuredClone(result);
   } catch (error) {

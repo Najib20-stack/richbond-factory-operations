@@ -1160,7 +1160,12 @@ export function App() {
 
   async function request(path, options = {}) {
     try {
-      return await apiClient.request(path, { ...options, token: options.token ?? session?.token });
+      const method = String(options.method || "GET").toUpperCase();
+      const requestOptions = { ...options, token: options.token ?? session?.token };
+      if (method !== "GET" && !Object.hasOwn(options, "timeoutMs")) {
+        requestOptions.timeoutMs = 30000;
+      }
+      return await apiClient.request(path, requestOptions);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401 && session) {
         endSession("Votre session a expiré. Connectez-vous de nouveau.");
