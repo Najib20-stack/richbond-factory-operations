@@ -35,7 +35,7 @@ jobs:
       TEST_DATABASE_SSL_MODE: disable
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -56,7 +56,7 @@ jobs:
       RICHBOND_ANDROID_BUILD_DIR: ${{ github.workspace }}/android-build-output
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
