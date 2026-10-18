@@ -34,7 +34,7 @@ jobs:
       TEST_DATABASE_URL: postgresql://richbond_test:richbond_test_password@127.0.0.1:5432/richbond_test
       TEST_DATABASE_SSL_MODE: disable
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -55,7 +55,7 @@ jobs:
     env:
       RICHBOND_ANDROID_BUILD_DIR: ${{ github.workspace }}/android-build-output
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: 24
